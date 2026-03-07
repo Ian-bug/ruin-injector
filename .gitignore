@@ -1,0 +1,43 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
+Cargo.lock
+
+# IDE
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Executables (optional)
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Debug/Release
+/debug
+/release
+
+# Testing
+/*.profraw
+
+# Backup files
+*.bak
+*.backup
+*.old
