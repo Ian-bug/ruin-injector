@@ -261,9 +261,9 @@ When contributing, please follow the guidelines in [AGENTS.md](AGENTS.md).
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/yourusername/ruin-injector)
-- [Issue Tracker](https://github.com/yourusername/ruin-injector/issues)
-- [Release Notes](https://github.com/yourusername/ruin-injector/releases)
+- [GitHub Repository](https://github.com/Ian-bug/ruin-injector)
+- [Issue Tracker](https://github.com/Ian-bug/ruin-injector/issues)
+- [Release Notes](https://github.com/Ian-bug/ruin-injector/releases)
 
 ---
 

@@ -261,9 +261,9 @@ cargo fmt --check
 
 ## 🔗 链接
 
-- [GitHub 仓库](https://github.com/yourusername/ruin-injector)
-- [问题跟踪器](https://github.com/yourusername/ruin-injector/issues)
-- [发布说明](https://github.com/yourusername/ruin-injector/releases)
+- [GitHub 仓库](https://github.com/Ian-bug/ruin-injector)
+- [问题跟踪器](https://github.com/Ian-bug/ruin-injector/issues)
+- [发布说明](https://github.com/Ian-bug/ruin-injector/releases)
 
 ---
 
