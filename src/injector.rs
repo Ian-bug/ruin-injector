@@ -55,32 +55,32 @@ impl Injector {
                 return processes;
             }
 
-            let mut entry = PROCESSENTRY32 {
-                dwSize: std::mem::size_of::<PROCESSENTRY32>() as u32,
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
                 ..Default::default()
             };
 
             unsafe {
-                let _ = Process32First(snapshot, &mut entry);
-                loop {
-                    let exe_name = String::from_utf16_lossy(
-                        &entry.szExeFile.iter().map(|&b| b as u16).collect::<Vec<u16>>()[..]
-                    );
-                    let exe_name = exe_name.trim_end_matches('\0').to_string();
-                    
-                    if !exe_name.is_empty() {
-                        processes.push(ProcessInfo {
-                            name: exe_name.clone(),
-                            pid: entry.th32ProcessID,
-                        });
-                    }
+                if Process32FirstW(snapshot, &mut entry).is_ok() {
+                    loop {
+                        let null_pos = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(260);
+                        let exe_name = String::from_utf16_lossy(&entry.szExeFile[..null_pos])
+                            .trim_end_matches('\0')
+                            .to_string();
+                        
+                        if !exe_name.is_empty() {
+                            processes.push(ProcessInfo {
+                                name: exe_name,
+                                pid: entry.th32ProcessID,
+                            });
+                        }
 
-                    let result = Process32Next(snapshot, &mut entry);
-                    if !result.is_ok() {
-                        break;
+                        if Process32NextW(snapshot, &mut entry).is_err() {
+                            break;
+                        }
                     }
                 }
-                CloseHandle(snapshot);
+                let _ = CloseHandle(snapshot);
             }
         }
 
@@ -99,30 +99,29 @@ impl Injector {
                 ));
             }
 
-            let mut entry = PROCESSENTRY32 {
-                dwSize: std::mem::size_of::<PROCESSENTRY32>() as u32,
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
                 ..Default::default()
             };
 
             unsafe {
-                let _ = Process32First(snapshot, &mut entry);
-                loop {
-                    let exe_name = String::from_utf16_lossy(
-                        &entry.szExeFile.iter().map(|&b| b as u16).collect::<Vec<u16>>()[..]
-                    );
-                    let exe_name = exe_name.trim_end_matches('\0');
-                    
-                    if exe_name.eq_ignore_ascii_case(process_name) {
-                        CloseHandle(snapshot);
-                        return Ok(entry.th32ProcessID);
-                    }
+                if Process32FirstW(snapshot, &mut entry).is_ok() {
+                    loop {
+                        let null_pos = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(260);
+                        let exe_name = String::from_utf16_lossy(&entry.szExeFile[..null_pos]);
+                        let exe_name = exe_name.trim_end_matches('\0');
+                        
+                        if exe_name.eq_ignore_ascii_case(process_name) {
+                            let _ = CloseHandle(snapshot);
+                            return Ok(entry.th32ProcessID);
+                        }
 
-                    let result = Process32Next(snapshot, &mut entry);
-                    if !result.is_ok() {
-                        break;
+                        if Process32NextW(snapshot, &mut entry).is_err() {
+                            break;
+                        }
                     }
                 }
-                CloseHandle(snapshot);
+                let _ = CloseHandle(snapshot);
             }
         } else {
             return Err(InjectionError::ProcessNotFound(

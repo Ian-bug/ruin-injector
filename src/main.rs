@@ -21,6 +21,9 @@ struct InjectorApp {
     show_process_list: bool,
     all_processes: Vec<(String, u32)>,
     search_query: String,
+    new_log_start_index: usize,
+    new_log_frame_counter: usize,
+    error_log_indices: Vec<usize>,
 }
 
 impl Default for InjectorApp {
@@ -36,6 +39,9 @@ impl Default for InjectorApp {
             show_process_list: false,
             all_processes: Vec::new(),
             search_query: String::new(),
+            new_log_start_index: 0,
+            new_log_frame_counter: 0,
+            error_log_indices: Vec::new(),
         }
     }
 }
@@ -47,9 +53,22 @@ impl InjectorApp {
     }
 
     fn add_log(&mut self, message: String) {
+        self.new_log_start_index = self.log_messages.len();
+        self.new_log_frame_counter = 0;
+        
+        let is_error = message.to_lowercase().contains("error");
         self.log_messages.push(message);
+        
+        if is_error {
+            self.error_log_indices.push(self.log_messages.len() - 1);
+        }
+        
         if self.log_messages.len() > 1000 {
             self.log_messages.remove(0);
+            self.new_log_start_index = self.new_log_start_index.saturating_sub(1);
+            self.error_log_indices = self.error_log_indices.iter()
+                .filter_map(|&i| i.checked_sub(1))
+                .collect();
         }
     }
 
@@ -192,8 +211,23 @@ impl eframe::App for InjectorApp {
                 .max_height(150.0)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    for log in &self.log_messages {
-                        ui.label(log);
+                    for (i, log) in self.log_messages.iter().enumerate() {
+                        let is_new = i >= self.new_log_start_index && self.new_log_frame_counter < 120;
+                        let is_error = self.error_log_indices.contains(&i);
+                        
+                        let color = if is_error {
+                            egui::Color32::RED
+                        } else if is_new {
+                            egui::Color32::from_rgb(100, 255, 100)
+                        } else {
+                            egui::Color32::WHITE
+                        };
+                        
+                        ui.colored_label(color, log);
+                    }
+                    
+                    if self.new_log_frame_counter < 120 {
+                        self.new_log_frame_counter += 1;
                     }
                 });
 
