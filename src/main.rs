@@ -3,27 +3,100 @@
 use eframe::egui;
 use std::sync::Arc;
 use std::path::PathBuf;
-use injector::Injector;
+use injector::{Injector, ProcessInfo};
 use config::Config;
 
 mod injector;
 mod uwp;
 mod config;
 
+struct LogManager {
+    messages: Vec<String>,
+    new_log_start_index: usize,
+    new_log_frame_counter: usize,
+    error_indices: Vec<usize>,
+    max_logs: usize,
+}
+
+struct ProcessSelector {
+    show_list: bool,
+    all_processes: Vec<(String, u32)>,
+    search_query: String,
+}
+
+impl ProcessSelector {
+    fn new() -> Self {
+        Self {
+            show_list: false,
+            all_processes: Vec::new(),
+            search_query: String::new(),
+        }
+    }
+    
+    fn refresh(&mut self, processes: Vec<ProcessInfo>) {
+        self.all_processes = processes.into_iter().map(|p| (p.name, p.pid)).collect();
+    }
+}
+
+impl LogManager {
+    fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            new_log_start_index: 0,
+            new_log_frame_counter: 0,
+            error_indices: Vec::new(),
+            max_logs: 1000,
+        }
+    }
+    
+    fn add_log(&mut self, message: String) {
+        self.new_log_start_index = self.messages.len();
+        self.new_log_frame_counter = 0;
+        
+        let is_error = message.to_lowercase().contains("error");
+        self.messages.push(message);
+        
+        if is_error {
+            self.error_indices.push(self.messages.len() - 1);
+        }
+        
+        if self.messages.len() > self.max_logs {
+            self.messages.remove(0);
+            self.new_log_start_index = self.new_log_start_index.saturating_sub(1);
+            self.error_indices = self.error_indices.iter()
+                .filter_map(|&i| i.checked_sub(1))
+                .collect();
+        }
+    }
+    
+    fn get_messages(&self) -> &[String] {
+        &self.messages
+    }
+    
+    fn is_error(&self, index: usize) -> bool {
+        self.error_indices.contains(&index)
+    }
+    
+    fn is_new(&self, index: usize) -> bool {
+        index >= self.new_log_start_index && self.new_log_frame_counter < 120
+    }
+    
+    fn update_frame(&mut self) {
+        if self.new_log_frame_counter < 120 {
+            self.new_log_frame_counter += 1;
+        }
+    }
+}
+
 struct InjectorApp {
     dll_path: Option<PathBuf>,
     process_name: String,
     auto_inject: bool,
-    log_messages: Vec<String>,
+    logger: LogManager,
     injector: Arc<Injector>,
     config: Config,
     injection_enabled: bool,
-    show_process_list: bool,
-    all_processes: Vec<(String, u32)>,
-    search_query: String,
-    new_log_start_index: usize,
-    new_log_frame_counter: usize,
-    error_log_indices: Vec<usize>,
+    selector: ProcessSelector,
 }
 
 impl Default for InjectorApp {
@@ -32,16 +105,11 @@ impl Default for InjectorApp {
             dll_path: None,
             process_name: String::new(),
             auto_inject: false,
-            log_messages: Vec::new(),
+            logger: LogManager::new(),
             injector: Arc::new(Injector::new()),
             config: Config::load(),
             injection_enabled: true,
-            show_process_list: false,
-            all_processes: Vec::new(),
-            search_query: String::new(),
-            new_log_start_index: 0,
-            new_log_frame_counter: 0,
-            error_log_indices: Vec::new(),
+            selector: ProcessSelector::new(),
         }
     }
 }
@@ -49,27 +117,11 @@ impl Default for InjectorApp {
 impl InjectorApp {
     fn refresh_process_list(&mut self) {
         let processes = self.injector.get_all_processes();
-        self.all_processes = processes.into_iter().map(|p| (p.name, p.pid)).collect();
+        self.selector.refresh(processes);
     }
 
     fn add_log(&mut self, message: String) {
-        self.new_log_start_index = self.log_messages.len();
-        self.new_log_frame_counter = 0;
-        
-        let is_error = message.to_lowercase().contains("error");
-        self.log_messages.push(message);
-        
-        if is_error {
-            self.error_log_indices.push(self.log_messages.len() - 1);
-        }
-        
-        if self.log_messages.len() > 1000 {
-            self.log_messages.remove(0);
-            self.new_log_start_index = self.new_log_start_index.saturating_sub(1);
-            self.error_log_indices = self.error_log_indices.iter()
-                .filter_map(|&i| i.checked_sub(1))
-                .collect();
-        }
+        self.logger.add_log(message);
     }
 
     fn inject_dll(&mut self) {
@@ -140,11 +192,11 @@ impl eframe::App for InjectorApp {
                 
                 if ui.button("📋 Select Process").clicked() {
                     self.refresh_process_list();
-                    self.show_process_list = true;
+                    self.selector.show_list = true;
                 }
             });
 
-            if self.show_process_list {
+            if self.selector.show_list {
                 egui::Window::new("Select Process")
                     .collapsible(false)
                     .resizable(true)
@@ -154,19 +206,19 @@ impl eframe::App for InjectorApp {
                         
                         ui.horizontal(|ui| {
                             ui.label("🔍 Search:");
-                            ui.text_edit_singleline(&mut self.search_query);
+                            ui.text_edit_singleline(&mut self.selector.search_query);
                         });
                         
                         ui.separator();
                         
-                        let search_lower = self.search_query.to_lowercase();
+                        let search_lower = self.selector.search_query.to_lowercase();
                         let mut matched_process: Option<(String, u32)> = None;
                         
                         egui::ScrollArea::vertical()
                             .max_height(300.0)
                             .show(ui, |ui| {
                                 let mut has_matches = false;
-                                for (name, pid) in &self.all_processes {
+                                for (name, pid) in &self.selector.all_processes {
                                     let name_lower = name.to_lowercase();
                                     if search_lower.is_empty() || name_lower.contains(&search_lower) {
                                         has_matches = true;
@@ -183,15 +235,15 @@ impl eframe::App for InjectorApp {
                         
                         ui.separator();
                         if ui.button("Cancel").clicked() {
-                            self.show_process_list = false;
-                            self.search_query.clear();
+                            self.selector.show_list = false;
+                            self.selector.search_query.clear();
                         }
                         
                         if let Some((name, _)) = matched_process {
                             self.process_name = name.clone();
                             self.add_log(format!("Selected process: {}", name));
-                            self.show_process_list = false;
-                            self.search_query.clear();
+                            self.selector.show_list = false;
+                            self.selector.search_query.clear();
                         }
                     });
             }
@@ -211,9 +263,9 @@ impl eframe::App for InjectorApp {
                 .max_height(150.0)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    for (i, log) in self.log_messages.iter().enumerate() {
-                        let is_new = i >= self.new_log_start_index && self.new_log_frame_counter < 120;
-                        let is_error = self.error_log_indices.contains(&i);
+                    for (i, log) in self.logger.get_messages().iter().enumerate() {
+                        let is_new = self.logger.is_new(i);
+                        let is_error = self.logger.is_error(i);
                         
                         let color = if is_error {
                             egui::Color32::RED
@@ -226,9 +278,7 @@ impl eframe::App for InjectorApp {
                         ui.colored_label(color, log);
                     }
                     
-                    if self.new_log_frame_counter < 120 {
-                        self.new_log_frame_counter += 1;
-                    }
+                    self.logger.update_frame();
                 });
 
             ui.separator();
@@ -254,4 +304,57 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|_cc| Box::<InjectorApp>::default()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_log_manager_add_message() {
+        let mut logger = LogManager::new();
+        logger.add_log("Test message".to_string());
+        
+        assert_eq!(logger.get_messages().len(), 1);
+        assert_eq!(logger.get_messages()[0], "Test message");
+    }
+    
+    #[test]
+    fn test_log_manager_error_detection() {
+        let mut logger = LogManager::new();
+        logger.add_log("Error: something went wrong".to_string());
+        logger.add_log("Normal message".to_string());
+        
+        assert!(logger.is_error(0));
+        assert!(!logger.is_error(1));
+    }
+    
+    #[test]
+    fn test_log_manager_new_status() {
+        let mut logger = LogManager::new();
+        logger.add_log("Test".to_string());
+        
+        assert!(logger.is_new(0));
+        
+        for _ in 0..120 {
+            logger.update_frame();
+        }
+        
+        assert!(!logger.is_new(0));
+    }
+    
+    #[test]
+    fn test_log_manager_max_limit() {
+        let mut logger = LogManager::new();
+        
+        for i in 0..1002 {
+            logger.add_log(format!("Log {}", i));
+        }
+        
+        assert_eq!(logger.get_messages().len(), 1000);
+        assert!(!logger.get_messages().contains(&"Log 0".to_string()));
+        assert!(!logger.get_messages().contains(&"Log 1".to_string()));
+        assert!(logger.get_messages().contains(&"Log 2".to_string()));
+        assert!(logger.get_messages().contains(&"Log 1001".to_string()));
+    }
 }
