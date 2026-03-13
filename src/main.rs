@@ -2,7 +2,7 @@
 
 use config::Config;
 use eframe::egui;
-use injector::{is_elevated, Injector, ProcessInfo};
+use injector::{is_elevated, Injector};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,88 +22,35 @@ const FONT_SIZE_SMALL: f32 = 12.0;
 
 const ANIMATION_SPEED: f32 = 0.15;
 
-struct Colors {
-    text_primary: egui::Color32,
-    text_secondary: egui::Color32,
-    success: egui::Color32,
-    error: egui::Color32,
-}
-
-impl Colors {
-    fn new() -> Self {
-        Self {
-            text_primary: egui::Color32::WHITE,
-            text_secondary: egui::Color32::LIGHT_GRAY,
-            success: egui::Color32::LIGHT_GREEN,
-            error: egui::Color32::LIGHT_RED,
-        }
-    }
-}
-
-impl Default for Colors {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 mod config;
 mod injector;
 
 struct LogManager {
     messages: Vec<String>,
-    alphas: Vec<f32>,
-    new_log_start_index: usize,
-    new_log_frame_counter: usize,
+    new_log_alpha: f32,
     error_indices: Vec<usize>,
     max_logs: usize,
-}
-
-struct ProcessSelector {
-    all_processes: Vec<(String, u32)>,
-    search_query: String,
-}
-
-impl ProcessSelector {
-    fn new() -> Self {
-        Self {
-            all_processes: Vec::new(),
-            search_query: String::new(),
-        }
-    }
-
-    fn refresh(&mut self, processes: Vec<ProcessInfo>) {
-        self.all_processes = processes.into_iter().map(|p| (p.name, p.pid)).collect();
-    }
 }
 
 impl LogManager {
     fn new() -> Self {
         Self {
             messages: Vec::new(),
-            alphas: Vec::new(),
-            new_log_start_index: 0,
-            new_log_frame_counter: 0,
+            new_log_alpha: 0.0,
             error_indices: Vec::new(),
             max_logs: MAX_LOGS,
         }
     }
 
     fn add_log(&mut self, message: String) {
-        self.new_log_start_index = self.messages.len();
-        self.new_log_frame_counter = 0;
-
+        self.new_log_alpha = 0.0;
         let is_error = message.to_lowercase().contains("error");
         self.messages.push(message);
-        self.alphas.push(0.0);
-
         if is_error {
             self.error_indices.push(self.messages.len() - 1);
         }
-
         if self.messages.len() > self.max_logs {
             self.messages.remove(0);
-            self.alphas.remove(0);
-            self.new_log_start_index = self.new_log_start_index.saturating_sub(1);
             self.error_indices = self
                 .error_indices
                 .iter()
@@ -120,18 +67,8 @@ impl LogManager {
         self.error_indices.contains(&index)
     }
 
-    fn is_new(&self, index: usize) -> bool {
-        index >= self.new_log_start_index && self.new_log_frame_counter < NEW_LOG_DURATION_FRAMES
-    }
-
     fn update_frame(&mut self) {
-        if self.new_log_frame_counter < NEW_LOG_DURATION_FRAMES {
-            self.new_log_frame_counter += 1;
-        }
-
-        for alpha in &mut self.alphas {
-            *alpha = (*alpha + ANIMATION_SPEED).min(1.0);
-        }
+        self.new_log_alpha = (self.new_log_alpha + ANIMATION_SPEED).min(1.0);
     }
 }
 
@@ -142,9 +79,9 @@ struct InjectorApp {
     logger: LogManager,
     injector: Arc<Injector>,
     config: Config,
-    selector: ProcessSelector,
+    all_processes: Vec<(String, u32)>,
+    search_query: String,
     auto_injected: bool,
-    colors: Colors,
     show_process_list: bool,
     selected_pid: Option<u32>,
     injection_history: Vec<String>,
@@ -163,9 +100,9 @@ impl Default for InjectorApp {
             logger: LogManager::new(),
             injector: Arc::new(Injector::new()),
             config,
-            selector: ProcessSelector::new(),
+            all_processes: Vec::new(),
+            search_query: String::new(),
             auto_injected: false,
-            colors: Colors::new(),
             show_process_list: false,
             selected_pid: None,
             injection_history: Vec::new(),
@@ -177,13 +114,9 @@ impl Default for InjectorApp {
 }
 
 impl InjectorApp {
-    fn lerp(&self, start: f32, end: f32, t: f32) -> f32 {
-        start + (end - start) * t
-    }
-
     fn refresh_process_list(&mut self) {
         let processes = self.injector.get_all_processes();
-        self.selector.refresh(processes);
+        self.all_processes = processes.into_iter().map(|p| (p.name, p.pid)).collect();
     }
 
     fn add_log(&mut self, message: String) {
@@ -256,21 +189,22 @@ impl InjectorApp {
 
 impl eframe::App for InjectorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.fade_alpha = self.lerp(self.fade_alpha, 1.0, ANIMATION_SPEED);
-        self.panel_y_offset = self.lerp(self.panel_y_offset, 0.0, ANIMATION_SPEED);
+        self.fade_alpha = self.fade_alpha + (1.0 - self.fade_alpha) * ANIMATION_SPEED;
+        self.panel_y_offset = self.panel_y_offset + (0.0 - self.panel_y_offset) * ANIMATION_SPEED;
 
         let target_scale = if self.show_process_list { 1.0 } else { 0.0 };
-        self.window_scale = self.lerp(self.window_scale, target_scale, ANIMATION_SPEED);
+        self.window_scale =
+            self.window_scale + (target_scale - self.window_scale) * ANIMATION_SPEED;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(self.panel_y_offset + 20.0);
 
             ui.vertical_centered(|ui| {
                 let title_color = egui::Color32::from_rgba_premultiplied(
-                    self.colors.text_primary.r(),
-                    self.colors.text_primary.g(),
-                    self.colors.text_primary.b(),
-                    (self.colors.text_primary.a() as f32 * self.fade_alpha) as u8,
+                    255,
+                    255,
+                    255,
+                    (255.0 * self.fade_alpha) as u8,
                 );
                 ui.label(
                     egui::RichText::new("Ruin DLL Injector")
@@ -285,9 +219,9 @@ impl eframe::App for InjectorApp {
                     })
                     .size(FONT_SIZE_SMALL)
                     .color(if is_elevated() {
-                        self.colors.success
+                        egui::Color32::LIGHT_GREEN
                     } else {
-                        self.colors.error
+                        egui::Color32::LIGHT_RED
                     }),
                 );
             });
@@ -300,7 +234,7 @@ impl eframe::App for InjectorApp {
             ui.label(
                 egui::RichText::new("Target DLL")
                     .size(FONT_SIZE_MEDIUM)
-                    .color(self.colors.text_primary),
+                    .color(egui::Color32::WHITE),
             );
             ui.add_space(10.0);
 
@@ -334,7 +268,7 @@ impl eframe::App for InjectorApp {
                 ui.label(
                     egui::RichText::new(path.display().to_string())
                         .size(FONT_SIZE_SMALL)
-                        .color(self.colors.text_secondary),
+                        .color(egui::Color32::LIGHT_GRAY),
                 );
             }
 
@@ -343,7 +277,7 @@ impl eframe::App for InjectorApp {
             ui.label(
                 egui::RichText::new("Target Process")
                     .size(FONT_SIZE_MEDIUM)
-                    .color(self.colors.text_primary),
+                    .color(egui::Color32::WHITE),
             );
             ui.add_space(10.0);
 
@@ -369,9 +303,9 @@ impl eframe::App for InjectorApp {
                 };
                 ui.label(egui::RichText::new(status).size(FONT_SIZE_SMALL).color(
                     if self.is_process_running() {
-                        self.colors.success
+                        egui::Color32::LIGHT_GREEN
                     } else {
-                        self.colors.text_secondary
+                        egui::Color32::LIGHT_GRAY
                     },
                 ));
             }
@@ -404,7 +338,7 @@ impl eframe::App for InjectorApp {
 
                 if self.auto_inject != prev_auto {
                     if self.auto_inject {
-                        ui.label(egui::RichText::new("Active").color(self.colors.success));
+                        ui.label(egui::RichText::new("Active").color(egui::Color32::LIGHT_GREEN));
                     }
                 }
             });
@@ -415,7 +349,7 @@ impl eframe::App for InjectorApp {
                 ui.label(
                     egui::RichText::new("Recent Injections")
                         .size(FONT_SIZE_MEDIUM)
-                        .color(self.colors.text_primary),
+                        .color(egui::Color32::WHITE),
                 );
                 ui.add_space(10.0);
 
@@ -423,7 +357,7 @@ impl eframe::App for InjectorApp {
                     ui.label(
                         egui::RichText::new(entry)
                             .size(FONT_SIZE_NORMAL)
-                            .color(self.colors.text_secondary),
+                            .color(egui::Color32::LIGHT_GRAY),
                     );
                 }
                 ui.add_space(20.0);
@@ -435,7 +369,7 @@ impl eframe::App for InjectorApp {
             ui.label(
                 egui::RichText::new("Activity Log")
                     .size(FONT_SIZE_MEDIUM)
-                    .color(self.colors.text_primary),
+                    .color(egui::Color32::WHITE),
             );
             ui.add_space(10.0);
 
@@ -444,23 +378,27 @@ impl eframe::App for InjectorApp {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     for (i, log) in self.logger.get_messages().iter().enumerate() {
-                        let is_new = self.logger.is_new(i);
                         let is_error = self.logger.is_error(i);
+                        let is_new_log = i == self.logger.get_messages().len() - 1;
 
                         let base_color = if is_error {
-                            self.colors.error
-                        } else if is_new {
-                            self.colors.success
+                            egui::Color32::LIGHT_RED
+                        } else if is_new_log {
+                            egui::Color32::LIGHT_GREEN
                         } else {
-                            self.colors.text_secondary
+                            egui::Color32::LIGHT_GRAY
                         };
 
-                        let alpha = self.logger.alphas.get(i).copied().unwrap_or(1.0);
+                        let alpha = if is_new_log {
+                            self.logger.new_log_alpha
+                        } else {
+                            1.0
+                        };
                         let color = egui::Color32::from_rgba_premultiplied(
                             base_color.r(),
                             base_color.g(),
                             base_color.b(),
-                            (base_color.a() as f32 * alpha) as u8,
+                            (255.0 * alpha) as u8,
                         );
 
                         ui.label(egui::RichText::new(log).size(FONT_SIZE_NORMAL).color(color));
@@ -473,7 +411,7 @@ impl eframe::App for InjectorApp {
             ui.label(
                 egui::RichText::new("Some processes require administrator privileges")
                     .size(FONT_SIZE_SMALL)
-                    .color(self.colors.text_secondary),
+                    .color(egui::Color32::LIGHT_GRAY),
             );
 
             self.check_auto_inject();
@@ -489,29 +427,29 @@ impl eframe::App for InjectorApp {
                     ui.set_enabled(self.window_scale > 0.5);
 
                     let title_color = egui::Color32::from_rgba_premultiplied(
-                        self.colors.text_primary.r(),
-                        self.colors.text_primary.g(),
-                        self.colors.text_primary.b(),
-                        (self.colors.text_primary.a() as f32 * window_alpha) as u8,
+                        255,
+                        255,
+                        255,
+                        (255.0 * window_alpha) as u8,
                     );
                     ui.heading(egui::RichText::new("Running Processes").color(title_color));
                     ui.separator();
 
                     ui.horizontal(|ui| {
                         ui.label("Search: ");
-                        ui.text_edit_singleline(&mut self.selector.search_query);
+                        ui.text_edit_singleline(&mut self.search_query);
                     });
 
                     ui.separator();
 
-                    let search_lower = self.selector.search_query.to_lowercase();
+                    let search_lower = self.search_query.to_lowercase();
                     let mut matched_process: Option<(String, u32)> = None;
 
                     egui::ScrollArea::vertical()
                         .max_height(PROCESS_LIST_SCROLL_HEIGHT)
                         .show(ui, |ui| {
                             let mut has_matches = false;
-                            for (name, pid) in &self.selector.all_processes {
+                            for (name, pid) in &self.all_processes {
                                 let name_lower = name.to_lowercase();
                                 if search_lower.is_empty() || name_lower.contains(&search_lower) {
                                     has_matches = true;
@@ -532,7 +470,7 @@ impl eframe::App for InjectorApp {
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
                             self.show_process_list = false;
-                            self.selector.search_query.clear();
+                            self.search_query.clear();
                         }
                     });
 
@@ -541,7 +479,7 @@ impl eframe::App for InjectorApp {
                         self.selected_pid = Some(pid);
                         self.add_log(format!("Selected process: {}", name));
                         self.show_process_list = false;
-                        self.selector.search_query.clear();
+                        self.search_query.clear();
                     }
                 });
         }
@@ -594,13 +532,13 @@ mod tests {
         let mut logger = LogManager::new();
         logger.add_log("Test".to_string());
 
-        assert!(logger.is_new(0));
+        assert_eq!(logger.new_log_alpha, 0.0);
 
         for _ in 0..NEW_LOG_DURATION_FRAMES {
             logger.update_frame();
         }
 
-        assert!(!logger.is_new(0));
+        assert!(logger.new_log_alpha >= 1.0);
     }
 
     #[test]
