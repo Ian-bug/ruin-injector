@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn test_is_elevated() {
         let elevated = is_elevated();
-        assert!(elevated || !elevated, "Should return a boolean");
+        let _ = elevated;
     }
 
     #[test]
