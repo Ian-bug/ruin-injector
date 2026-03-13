@@ -46,7 +46,6 @@ pub enum InjectionError {
     CreateRemoteThreadFailed(String),
     InvalidPath(String),
     InvalidProcessName(String),
-    NotElevated(String),
 }
 
 impl std::fmt::Display for InjectionError {
@@ -63,7 +62,6 @@ impl std::fmt::Display for InjectionError {
             }
             InjectionError::InvalidPath(msg) => write!(f, "Invalid DLL path: {}", msg),
             InjectionError::InvalidProcessName(msg) => write!(f, "Invalid process name: {}", msg),
-            InjectionError::NotElevated(msg) => write!(f, "Not elevated: {}", msg),
         }
     }
 }

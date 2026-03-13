@@ -6,7 +6,6 @@ use injector::{is_elevated, Injector};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-const NEW_LOG_DURATION_FRAMES: usize = 120;
 const MAX_LOGS: usize = 1000;
 const PROCESS_LIST_SCROLL_HEIGHT: f32 = 400.0;
 const LOG_SCROLL_HEIGHT: f32 = 250.0;
@@ -297,7 +296,7 @@ impl eframe::App for InjectorApp {
 
             if !self.process_name.is_empty() {
                 let status = if self.is_process_running() {
-                    format!("Status: Running")
+                    "Status: Running".to_string()
                 } else {
                     "Status: Not found".to_string()
                 };
@@ -336,10 +335,8 @@ impl eframe::App for InjectorApp {
                     }
                 }
 
-                if self.auto_inject != prev_auto {
-                    if self.auto_inject {
-                        ui.label(egui::RichText::new("Active").color(egui::Color32::LIGHT_GREEN));
-                    }
+                if self.auto_inject != prev_auto && self.auto_inject {
+                    ui.label(egui::RichText::new("Active").color(egui::Color32::LIGHT_GREEN));
                 }
             });
 
@@ -534,7 +531,7 @@ mod tests {
 
         assert_eq!(logger.new_log_alpha, 0.0);
 
-        for _ in 0..NEW_LOG_DURATION_FRAMES {
+        for _ in 0..120 {
             logger.update_frame();
         }
 
