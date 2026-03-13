@@ -1,27 +1,28 @@
 # Ruin DLL 注入器
 
-基于 Rust 和 egui 构建的现代化轻量级 DLL 注入器，专为 Windows 应用程序设计，包括 UWP（通用 Windows 平台）进程。受 [FateInjector](https://github.com/fligger/FateInjector) 启发。
+基于 Rust 和 egui 构建的现代化轻量级 DLL 注入器，专为 Windows 应用程序设计。受 [FateInjector](https://github.com/fligger/FateInjector) 启发。
 
 ![截图](screenshot.png)
 
-## ✨ 功能特性
+## 功能特性
 
-- **现代 GUI**: 使用 egui 构建的简洁响应式界面
+- **现代 GUI**: 使用 egui 构建的简洁响应式界面，带有流畅动画
+- **动画过渡**: 淡入、滑入和窗口缩放动画
 - **进程浏览器**: 从运行中的进程中进行可视化选择，支持搜索功能
 - **自动配置**: 在会话之间保存设置（DLL 路径、进程偏好）
 - **自动注入**: 检测到目标进程时自动注入
-- **管理员检查**: 注入前验证管理员权限
-- **实时日志**: 监控注入状态和详细错误消息
+- **注入历史**: 记录最近 10 次注入及其时间戳
+- **实时日志**: 监控注入状态，带有动画日志条目
 - **无控制台**: 纯 GUI 应用程序 - 无黑色终端窗口
 - **轻量级**: 约 4.5 MB 可执行文件，依赖最少
 
-## 📋 系统要求
+## 系统要求
 
 - Windows 10/11 (64 位)
-- 管理员权限（大多数进程需要，尤其是 UWP）
+- 管理员权限（某些进程需要，并非所有）
 - 要注入的 DLL 文件
 
-## 🚀 快速开始
+## 快速开始
 
 ### 编译
 
@@ -35,26 +36,26 @@ cargo build --release
 
 将 `.ico` 文件命名为 `icon.ico` 放在项目根目录，然后重新编译。详细说明请参阅 [ICON.md](ICON.md)。
 
-## 📖 使用方法
+## 使用方法
 
 1. **运行应用程序**
-   ```bash
-   .\ruin-injector.exe
-   ```
-   （右键 → "以管理员身份运行" 推荐）
+    ```bash
+    .\ruin-injector.exe
+    ```
+    （右键 -> "以管理员身份运行" 以获得最大兼容性）
 
 2. **选择 DLL 文件**
-   - 点击 "Browse..." 按钮
-   - 导航到并选择 DLL 文件
+    - 点击 "Browse" 按钮
+    - 导航到并选择 DLL 文件
 
 3. **选择目标进程**
-   - 点击 "📋 Select Process" 按钮
-   - 使用搜索框快速过滤进程
-   - 点击所需的进程
+    - 点击 "List" 按钮
+    - 使用搜索框快速过滤进程
+    - 点击所需的进程
 
 4. **注入**
-   - 点击 "Inject" 按钮
-   - 监控日志区域查看成功/错误消息
+    - 点击 "Inject DLL" 按钮
+    - 监控日志区域查看成功/错误消息
 
 ### 功能详情
 
@@ -62,32 +63,40 @@ cargo build --release
 - **实时进程列表**: 显示所有当前运行的进程
 - **搜索/过滤**: 输入以快速查找特定进程
 - **进程信息**: 显示进程名和 PID（进程 ID）
+- **动画窗口**: 进程列表以平滑缩放动画打开
 
 #### 注入选项
 - **自动注入**: 检测到目标进程时自动注入
   - 通过 UI 中的复选框启用
   - 设置在会话之间持久化
   - 检测进程启动并自动注入
+  - 启用时显示 "Active" 指示器
 - **手动注入**: 点击注入按钮进行立即注入
 
-## 🏗️ 架构
+#### 视觉增强
+- **淡入动画**: 标题在启动时平滑淡入
+- **滑动动画**: 内容从下方滑入
+- **日志动画**: 新日志条目在添加时淡入
+- **窗口缩放**: 进程选择器窗口平滑缩进/缩出
+
+## 架构
 
 ```
 rust-injector/
 ├── src/
-│   ├── main.rs          # 应用入口、egui UI、状态管理
-│   ├── injector.rs      # 核心注入逻辑、Windows API 调用、管理员检查
+│   ├── main.rs          # 应用入口、egui UI、动画、状态管理
+│   ├── injector.rs      # 核心注入逻辑、Windows API 调用
 │   └── config.rs       # 配置持久化（JSON）
 ├── Cargo.toml           # 项目依赖和元数据
 ├── build.rs             # Windows 资源编译（图标嵌入）
 ├── icon.ico             # 应用图标（可选，自动嵌入）
-├── README.md            # 本文件（英文版）
+├── README.md            # 英文文档
 ├── README_CN.md        # 本文件（中文版）
 ├── ICON.md             # 图标使用说明
 └── AGENTS.md           # AI 编程助手指南
 ```
 
-## ⚙️ 技术实现
+## 技术实现
 
 ### DLL 注入流程
 
@@ -98,6 +107,7 @@ rust-injector/
 2. **进程访问**
    - 通过 `OpenProcess(PROCESS_ALL_ACCESS, ...)` 打开目标进程
    - 处理 Windows 权限模型
+   - 如果权限不足则优雅失败
 
 3. **内存分配**
    - 通过 `VirtualAllocEx(...)` 在目标进程中分配内存
@@ -130,6 +140,22 @@ rust-injector/
 | `LoadLibraryW` | 在目标进程中加载 DLL |
 | `CloseHandle` | 释放资源 |
 
+### 动画系统
+
+应用程序使用自定义动画系统：
+
+- **线性插值**: `lerp()` 函数用于平滑过渡
+- **淡入动画**: UI 元素的 Alpha 值插值
+- **滑动动画**: 面板移动的 Y 偏移插值
+- **缩放动画**: 对话框的窗口缩放插值
+- **日志 Alpha**: 每条日志的透明度用于平滑淡入
+
+**动画常量**：
+```rust
+const ANIMATION_SPEED: f32 = 0.15;  // 每帧接近 15%
+const NEW_LOG_DURATION_FRAMES: usize = 120;  // 60fps 下 2 秒
+```
+
 ### 错误处理
 
 所有操作都包含全面的错误处理：
@@ -141,12 +167,16 @@ pub enum InjectionError {
     MemoryAllocationFailed(String),
     WriteMemoryFailed(String),
     CreateRemoteThreadFailed(String),
+    InvalidPath(String),
+    InvalidProcessName(String),
 }
 ```
 
-错误在 UI 日志中显示带有描述性上下文的消息。
+错误在 UI 日志中显示带有描述性上下文的消息。在所有错误路径中都会进行适当的资源清理。
 
-## 🛠️ 开发
+**注意**: 已移除管理员检查 - 注入现在使用当前权限尝试，如果需要提升权限则优雅失败。
+
+## 开发
 
 ### 构建命令
 
@@ -192,7 +222,6 @@ cargo test test_name
 
 项目包含全面的单元和集成测试，涵盖：
 - 进程枚举
-- 管理员权限检测
 - 输入验证
 - 错误处理
 - 配置管理
@@ -209,22 +238,25 @@ cargo test test_name
 
 ### 最近改进
 
-基于代码审查实施了以下增强功能：
+代码库的主要更新：
 
-1. **管理员权限验证**: 添加 `is_elevated()` 函数在注入前检查管理员权限
-2. **自动注入实现**: 具有进程检测的完整自动注入功能实现
-3. **代码质量**: 用命名常量替换魔术数字，改进错误处理，移除未使用的代码
-4. **资源管理**: 用于句柄管理的 RAII 守卫类型（可供将来使用）
-5. **测试**: 涵盖所有主要组件的综合测试套件
-6. **安全性**: 移除不安全的 transmute，改进文档，更好的错误清理
+1. **现代 UI 重设计**: 简洁、简单的布局，具有一致的间距和排版
+2. **动画系统**: 在整个 UI 中添加了淡入、滑入和窗口缩放动画
+3. **日志动画**: 每条新日志使用 alpha 插值平滑淡入
+4. **注入历史**: 跟踪最近 10 次成功注入及其时间戳
+5. **移除管理员检查**: 注入现在使用可用权限工作，如果需要管理员权限则优雅失败
+6. **更新常量**: 添加了字体大小常量和动画速度常量
+7. **改进窗口**: 更大的窗口（700x700）以更好地显示内容
+8. **修复 Unicode 箭头**: 更改为 ASCII 箭头字符以获得更好的兼容性
+9. **清洁代码**: 简化 UI 代码，移除复杂样式以提高可维护性
 
-## ⚠️ 重要说明
+## 重要说明
 
 ### 安全性考虑
 
 - **杀毒软件检测**: DLL 注入是杀毒软件监控的常见技术
-- **管理员访问**: 注入大多数进程需要
-- **权限模型**: UWP 应用程序具有受限权限
+- **权限模型**: 注入使用当前权限工作 - 某些进程可能需要管理员访问权限
+- **进程保护**: 系统保护的进程无法注入
 
 ### 最佳实践
 
@@ -235,11 +267,11 @@ cargo test test_name
 
 ### 限制
 
-- **UWP 权限**: 可能需要手动 DLL 权限设置
 - **进程保护**: 系统保护的进程（如 `csrss.exe`、`lsass.exe`）无法注入
 - **杀毒软件干扰**: 实时保护可能会阻止注入尝试
+- **权限依赖**: 某些进程可能需要管理员访问权限才能成功注入
 
-## 📄 许可证
+## 许可证
 
 本项目**按原样**提供，**仅供教育和开发目的使用**。
 
@@ -250,12 +282,12 @@ cargo test test_name
 - 用户有责任遵守适用的法律和法规
 - 作者不对本软件的任何滥用负责
 
-## 🙏 致谢
+## 致谢
 
 - **启发来源**: [FateInjector](https://github.com/fligger/FateInjector) - 原始 C++ 实现
-- **依赖项**: [egui](https://github.com/emilk/egui), [windows-rs](https://github.com/microsoft/windows-rs), [rfd](https://github.com/PolyMeow/rfd), [serde](https://github.com/serde-rs/serde), [dirs](https://github.com/dirs-dev/dirs-rs), [winres](https://github.com/mxre/winres)
+- **依赖项**: [egui](https://github.com/emilk/egui), [windows-rs](https://github.com/microsoft/windows-rs), [rfd](https://github.com/PolyMeow/rfd), [serde](https://github.com/serde-rs/serde), [dirs](https://github.com/dirs-dev/dirs-rs), [winres](https://github.com/mxre/winres), [chrono](https://github.com/chronotope/chrono)
 
-## 📞 贡献
+## 贡献
 
 欢迎贡献！请随时：
 - 通过 issue 报告错误
@@ -265,25 +297,25 @@ cargo test test_name
 
 贡献时，请遵循 [AGENTS.md](AGENTS.md) 中的指南。
 
-## 🔗 链接
+## 链接
 
 - [GitHub 仓库](https://github.com/Ian-bug/ruin-injector)
 - [问题跟踪器](https://github.com/Ian-bug/ruin-injector/issues)
 - [发布说明](https://github.com/Ian-bug/ruin-injector/releases)
 
-## 📊 代码质量
+## 代码质量
 
 本项目已进行全面代码审查和质量改进：
 
-- ✅ 所有代码通过 `cargo clippy` 检查
-- ✅ 全面的测试覆盖率（13 个测试）
-- ✅ 正确的错误处理和资源清理
-- ✅ 用命名常量替换魔术数字
-- ✅ 管理员权限验证
-- ✅ 自动注入功能已实现
-- ✅ 资源管理的 RAII 模式
-- ✅ 带有 AGENTS.md 指南的详细文档代码库
+- 所有代码通过 `cargo clippy` 检查
+- 全面的测试覆盖率（13 个测试）
+- 正确的错误处理和资源清理
+- 用命名常量替换魔术数字
+- 流畅的动画和现代 UI
+- 自动注入功能已实现
+- 资源管理的 RAII 模式
+- 带有 AGENTS.md 指南的详细文档代码库
 
 ---
 
-**用 Rust ❤️ 制作**
+**用 Rust 制作**

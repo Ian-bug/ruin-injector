@@ -2,24 +2,56 @@
 
 use config::Config;
 use eframe::egui;
-use injector::{Injector, ProcessInfo};
+use injector::{is_elevated, Injector, ProcessInfo};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 const NEW_LOG_DURATION_FRAMES: usize = 120;
 const MAX_LOGS: usize = 1000;
-const PROCESS_LIST_SCROLL_HEIGHT: f32 = 300.0;
-const LOG_SCROLL_HEIGHT: f32 = 150.0;
-const WINDOW_WIDTH: f32 = 500.0;
-const WINDOW_HEIGHT: f32 = 480.0;
-const MIN_WINDOW_WIDTH: f32 = 350.0;
-const MIN_WINDOW_HEIGHT: f32 = 400.0;
+const PROCESS_LIST_SCROLL_HEIGHT: f32 = 400.0;
+const LOG_SCROLL_HEIGHT: f32 = 250.0;
+const WINDOW_WIDTH: f32 = 700.0;
+const WINDOW_HEIGHT: f32 = 700.0;
+const MIN_WINDOW_WIDTH: f32 = 600.0;
+const MIN_WINDOW_HEIGHT: f32 = 600.0;
+
+const FONT_SIZE_LARGE: f32 = 18.0;
+const FONT_SIZE_MEDIUM: f32 = 16.0;
+const FONT_SIZE_NORMAL: f32 = 14.0;
+const FONT_SIZE_SMALL: f32 = 12.0;
+
+const ANIMATION_SPEED: f32 = 0.15;
+
+struct Colors {
+    text_primary: egui::Color32,
+    text_secondary: egui::Color32,
+    success: egui::Color32,
+    error: egui::Color32,
+}
+
+impl Colors {
+    fn new() -> Self {
+        Self {
+            text_primary: egui::Color32::WHITE,
+            text_secondary: egui::Color32::LIGHT_GRAY,
+            success: egui::Color32::LIGHT_GREEN,
+            error: egui::Color32::LIGHT_RED,
+        }
+    }
+}
+
+impl Default for Colors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 mod config;
 mod injector;
 
 struct LogManager {
     messages: Vec<String>,
+    alphas: Vec<f32>,
     new_log_start_index: usize,
     new_log_frame_counter: usize,
     error_indices: Vec<usize>,
@@ -27,7 +59,6 @@ struct LogManager {
 }
 
 struct ProcessSelector {
-    show_list: bool,
     all_processes: Vec<(String, u32)>,
     search_query: String,
 }
@@ -35,7 +66,6 @@ struct ProcessSelector {
 impl ProcessSelector {
     fn new() -> Self {
         Self {
-            show_list: false,
             all_processes: Vec::new(),
             search_query: String::new(),
         }
@@ -50,6 +80,7 @@ impl LogManager {
     fn new() -> Self {
         Self {
             messages: Vec::new(),
+            alphas: Vec::new(),
             new_log_start_index: 0,
             new_log_frame_counter: 0,
             error_indices: Vec::new(),
@@ -63,6 +94,7 @@ impl LogManager {
 
         let is_error = message.to_lowercase().contains("error");
         self.messages.push(message);
+        self.alphas.push(0.0);
 
         if is_error {
             self.error_indices.push(self.messages.len() - 1);
@@ -70,6 +102,7 @@ impl LogManager {
 
         if self.messages.len() > self.max_logs {
             self.messages.remove(0);
+            self.alphas.remove(0);
             self.new_log_start_index = self.new_log_start_index.saturating_sub(1);
             self.error_indices = self
                 .error_indices
@@ -95,6 +128,10 @@ impl LogManager {
         if self.new_log_frame_counter < NEW_LOG_DURATION_FRAMES {
             self.new_log_frame_counter += 1;
         }
+
+        for alpha in &mut self.alphas {
+            *alpha = (*alpha + ANIMATION_SPEED).min(1.0);
+        }
     }
 }
 
@@ -107,6 +144,13 @@ struct InjectorApp {
     config: Config,
     selector: ProcessSelector,
     auto_injected: bool,
+    colors: Colors,
+    show_process_list: bool,
+    selected_pid: Option<u32>,
+    injection_history: Vec<String>,
+    fade_alpha: f32,
+    panel_y_offset: f32,
+    window_scale: f32,
 }
 
 impl Default for InjectorApp {
@@ -121,11 +165,22 @@ impl Default for InjectorApp {
             config,
             selector: ProcessSelector::new(),
             auto_injected: false,
+            colors: Colors::new(),
+            show_process_list: false,
+            selected_pid: None,
+            injection_history: Vec::new(),
+            fade_alpha: 0.0,
+            panel_y_offset: 50.0,
+            window_scale: 0.0,
         }
     }
 }
 
 impl InjectorApp {
+    fn lerp(&self, start: f32, end: f32, t: f32) -> f32 {
+        start + (end - start) * t
+    }
+
     fn refresh_process_list(&mut self) {
         let processes = self.injector.get_all_processes();
         self.selector.refresh(processes);
@@ -160,14 +215,24 @@ impl InjectorApp {
             return;
         }
 
+        let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
         self.add_log(format!("Attempting to inject into {}...", proc_name));
 
         match self.injector.inject(&proc_name, &dll_path) {
             Ok(_) => {
                 self.add_log("Injection successful!".to_string());
                 self.auto_injected = true;
-                self.config.last_process = Some(proc_name);
+                self.config.last_process = Some(proc_name.clone());
                 self.config.save();
+                let dll_name = dll_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown.dll");
+                self.injection_history
+                    .insert(0, format!("[{}] {} -> {}", timestamp, proc_name, dll_name));
+                if self.injection_history.len() > 10 {
+                    self.injection_history.pop();
+                }
             }
             Err(e) => {
                 self.add_log(format!("Injection failed: {}", e));
@@ -191,13 +256,68 @@ impl InjectorApp {
 
 impl eframe::App for InjectorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.fade_alpha = self.lerp(self.fade_alpha, 1.0, ANIMATION_SPEED);
+        self.panel_y_offset = self.lerp(self.panel_y_offset, 0.0, ANIMATION_SPEED);
+
+        let target_scale = if self.show_process_list { 1.0 } else { 0.0 };
+        self.window_scale = self.lerp(self.window_scale, target_scale, ANIMATION_SPEED);
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Ruin DLL Injector");
+            ui.add_space(self.panel_y_offset + 20.0);
+
+            ui.vertical_centered(|ui| {
+                let title_color = egui::Color32::from_rgba_premultiplied(
+                    self.colors.text_primary.r(),
+                    self.colors.text_primary.g(),
+                    self.colors.text_primary.b(),
+                    (self.colors.text_primary.a() as f32 * self.fade_alpha) as u8,
+                );
+                ui.label(
+                    egui::RichText::new("Ruin DLL Injector")
+                        .size(FONT_SIZE_LARGE)
+                        .color(title_color),
+                );
+                ui.label(
+                    egui::RichText::new(if is_elevated() {
+                        "Administrator"
+                    } else {
+                        "Not Administrator"
+                    })
+                    .size(FONT_SIZE_SMALL)
+                    .color(if is_elevated() {
+                        self.colors.success
+                    } else {
+                        self.colors.error
+                    }),
+                );
+            });
+
+            ui.add_space(20.0);
+
             ui.separator();
+            ui.add_space(20.0);
+
+            ui.label(
+                egui::RichText::new("Target DLL")
+                    .size(FONT_SIZE_MEDIUM)
+                    .color(self.colors.text_primary),
+            );
+            ui.add_space(10.0);
 
             ui.horizontal(|ui| {
-                ui.label("DLL Path:");
-                if ui.button("Browse...").clicked() {
+                let display_text = match &self.dll_path {
+                    Some(path) => path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Select a DLL...")
+                        .to_string(),
+                    None => "No DLL selected".to_string(),
+                };
+                ui.add_enabled_ui(false, |ui| {
+                    ui.text_edit_singleline(&mut display_text.to_owned());
+                });
+
+                if ui.button("Browse").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("DLL", &["dll"])
                         .pick_file()
@@ -211,87 +331,64 @@ impl eframe::App for InjectorApp {
             });
 
             if let Some(path) = &self.dll_path {
-                ui.label(path.display().to_string());
-            } else {
-                ui.label("No DLL selected");
+                ui.label(
+                    egui::RichText::new(path.display().to_string())
+                        .size(FONT_SIZE_SMALL)
+                        .color(self.colors.text_secondary),
+                );
             }
 
-            ui.separator();
+            ui.add_space(20.0);
+
+            ui.label(
+                egui::RichText::new("Target Process")
+                    .size(FONT_SIZE_MEDIUM)
+                    .color(self.colors.text_primary),
+            );
+            ui.add_space(10.0);
 
             ui.horizontal(|ui| {
-                ui.label("Process Name:");
                 ui.text_edit_singleline(&mut self.process_name);
 
-                if ui.button("📋 Select Process").clicked() {
+                let btn_text = if self.is_process_running() {
+                    "Running"
+                } else {
+                    "List"
+                };
+                if ui.button(btn_text).clicked() {
                     self.refresh_process_list();
-                    self.selector.show_list = true;
+                    self.show_process_list = true;
                 }
             });
 
-            if self.selector.show_list {
-                egui::Window::new("Select Process")
-                    .collapsible(false)
-                    .resizable(true)
-                    .show(ctx, |ui| {
-                        ui.heading("Running Processes");
-                        ui.separator();
-
-                        ui.horizontal(|ui| {
-                            ui.label("🔍 Search:");
-                            ui.text_edit_singleline(&mut self.selector.search_query);
-                        });
-
-                        ui.separator();
-
-                        let search_lower = self.selector.search_query.to_lowercase();
-                        let mut matched_process: Option<(String, u32)> = None;
-
-                        egui::ScrollArea::vertical()
-                            .max_height(PROCESS_LIST_SCROLL_HEIGHT)
-                            .show(ui, |ui| {
-                                let mut has_matches = false;
-                                for (name, pid) in &self.selector.all_processes {
-                                    let name_lower = name.to_lowercase();
-                                    if search_lower.is_empty() || name_lower.contains(&search_lower)
-                                    {
-                                        has_matches = true;
-                                        if ui
-                                            .button(format!("Select: {} (PID: {})", name, pid))
-                                            .clicked()
-                                        {
-                                            matched_process = Some((name.clone(), *pid));
-                                        }
-                                    }
-                                }
-
-                                if !has_matches {
-                                    ui.label("No matching processes found");
-                                }
-                            });
-
-                        ui.separator();
-                        if ui.button("Cancel").clicked() {
-                            self.selector.show_list = false;
-                            self.selector.search_query.clear();
-                        }
-
-                        if let Some((name, _)) = matched_process {
-                            self.process_name = name.clone();
-                            self.add_log(format!("Selected process: {}", name));
-                            self.selector.show_list = false;
-                            self.selector.search_query.clear();
-                        }
-                    });
+            if !self.process_name.is_empty() {
+                let status = if self.is_process_running() {
+                    format!("Status: Running")
+                } else {
+                    "Status: Not found".to_string()
+                };
+                ui.label(egui::RichText::new(status).size(FONT_SIZE_SMALL).color(
+                    if self.is_process_running() {
+                        self.colors.success
+                    } else {
+                        self.colors.text_secondary
+                    },
+                ));
             }
 
+            ui.add_space(20.0);
+
+            ui.separator();
+            ui.add_space(20.0);
+
             ui.horizontal(|ui| {
-                if ui.button("Inject").clicked() {
+                let inject_button = egui::Button::new("Inject DLL");
+                if ui.add(inject_button).clicked() {
                     self.inject_dll();
                 }
 
-                let prev_auto_inject = self.auto_inject;
-                ui.checkbox(&mut self.auto_inject, "Auto Inject");
-                if prev_auto_inject != self.auto_inject {
+                let prev_auto = self.auto_inject;
+                if ui.checkbox(&mut self.auto_inject, "Auto-inject").changed() {
                     self.config.auto_inject = self.auto_inject;
                     self.config.save();
                     if self.auto_inject {
@@ -304,11 +401,44 @@ impl eframe::App for InjectorApp {
                         self.add_log("Auto-inject disabled.".to_string());
                     }
                 }
+
+                if self.auto_inject != prev_auto {
+                    if self.auto_inject {
+                        ui.label(egui::RichText::new("Active").color(self.colors.success));
+                    }
+                }
             });
 
-            ui.separator();
+            ui.add_space(20.0);
 
-            ui.heading("Logs");
+            if !self.injection_history.is_empty() {
+                ui.label(
+                    egui::RichText::new("Recent Injections")
+                        .size(FONT_SIZE_MEDIUM)
+                        .color(self.colors.text_primary),
+                );
+                ui.add_space(10.0);
+
+                for entry in &self.injection_history {
+                    ui.label(
+                        egui::RichText::new(entry)
+                            .size(FONT_SIZE_NORMAL)
+                            .color(self.colors.text_secondary),
+                    );
+                }
+                ui.add_space(20.0);
+            }
+
+            ui.separator();
+            ui.add_space(20.0);
+
+            ui.label(
+                egui::RichText::new("Activity Log")
+                    .size(FONT_SIZE_MEDIUM)
+                    .color(self.colors.text_primary),
+            );
+            ui.add_space(10.0);
+
             egui::ScrollArea::vertical()
                 .max_height(LOG_SCROLL_HEIGHT)
                 .stick_to_bottom(true)
@@ -317,25 +447,104 @@ impl eframe::App for InjectorApp {
                         let is_new = self.logger.is_new(i);
                         let is_error = self.logger.is_error(i);
 
-                        let color = if is_error {
-                            egui::Color32::RED
+                        let base_color = if is_error {
+                            self.colors.error
                         } else if is_new {
-                            egui::Color32::from_rgb(100, 255, 100)
+                            self.colors.success
                         } else {
-                            egui::Color32::WHITE
+                            self.colors.text_secondary
                         };
 
-                        ui.colored_label(color, log);
-                    }
+                        let alpha = self.logger.alphas.get(i).copied().unwrap_or(1.0);
+                        let color = egui::Color32::from_rgba_premultiplied(
+                            base_color.r(),
+                            base_color.g(),
+                            base_color.b(),
+                            (base_color.a() as f32 * alpha) as u8,
+                        );
 
+                        ui.label(egui::RichText::new(log).size(FONT_SIZE_NORMAL).color(color));
+                    }
                     self.logger.update_frame();
                 });
 
-            ui.separator();
-            ui.label("Note: This injector requires administrator privileges for most processes.");
+            ui.add_space(15.0);
+
+            ui.label(
+                egui::RichText::new("Some processes require administrator privileges")
+                    .size(FONT_SIZE_SMALL)
+                    .color(self.colors.text_secondary),
+            );
 
             self.check_auto_inject();
         });
+
+        if self.window_scale > 0.01 {
+            let window_alpha = self.window_scale;
+            egui::Window::new("Select Process")
+                .collapsible(false)
+                .resizable(true)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.set_enabled(self.window_scale > 0.5);
+
+                    let title_color = egui::Color32::from_rgba_premultiplied(
+                        self.colors.text_primary.r(),
+                        self.colors.text_primary.g(),
+                        self.colors.text_primary.b(),
+                        (self.colors.text_primary.a() as f32 * window_alpha) as u8,
+                    );
+                    ui.heading(egui::RichText::new("Running Processes").color(title_color));
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        ui.label("Search: ");
+                        ui.text_edit_singleline(&mut self.selector.search_query);
+                    });
+
+                    ui.separator();
+
+                    let search_lower = self.selector.search_query.to_lowercase();
+                    let mut matched_process: Option<(String, u32)> = None;
+
+                    egui::ScrollArea::vertical()
+                        .max_height(PROCESS_LIST_SCROLL_HEIGHT)
+                        .show(ui, |ui| {
+                            let mut has_matches = false;
+                            for (name, pid) in &self.selector.all_processes {
+                                let name_lower = name.to_lowercase();
+                                if search_lower.is_empty() || name_lower.contains(&search_lower) {
+                                    has_matches = true;
+
+                                    if ui.button(format!("{} (PID: {})", name, pid)).clicked() {
+                                        matched_process = Some((name.clone(), *pid));
+                                    }
+                                }
+                            }
+
+                            if !has_matches {
+                                ui.label("No matching processes found");
+                            }
+                        });
+
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.show_process_list = false;
+                            self.selector.search_query.clear();
+                        }
+                    });
+
+                    if let Some((name, pid)) = matched_process {
+                        self.process_name = name.clone();
+                        self.selected_pid = Some(pid);
+                        self.add_log(format!("Selected process: {}", name));
+                        self.show_process_list = false;
+                        self.selector.search_query.clear();
+                    }
+                });
+        }
 
         ctx.request_repaint();
     }

@@ -211,12 +211,6 @@ impl Injector {
             ));
         }
 
-        if !is_elevated() {
-            return Err(InjectionError::NotElevated(
-                "Administrator privileges are required for DLL injection".to_string(),
-            ));
-        }
-
         let dll_path_str = dll_path.to_string_lossy().to_string();
         let dll_path_wide: Vec<u16> = dll_path_str
             .encode_utf16()
@@ -400,11 +394,7 @@ mod tests {
                 "notepad.exe",
                 Path::new("C:\\Windows\\System32\\kernel32.dll"),
             );
-            assert!(result.is_err(), "Should return error when not elevated");
-            match result {
-                Err(InjectionError::NotElevated(_)) => (),
-                _ => panic!("Should return NotElevated error"),
-            }
+            assert!(result.is_err(), "Should return error");
         }
     }
 

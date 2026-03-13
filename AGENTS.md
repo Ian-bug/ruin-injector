@@ -93,6 +93,10 @@ cargo clippy --fix --allow-dirty --allow-staged
 - `egui::ScrollArea` for scroll
 - `ctx.request_repaint()` at end
 - Use index-based iteration to avoid borrow checker issues
+- **Animations**: Use linear interpolation (`lerp`) for smooth transitions
+- **Fade effects**: Manipulate alpha values via `Color32::from_rgba_premultiplied()`
+- **UI scaling**: Use float values (0.0-1.0) for scale/slide/alpha animations
+- **Log animations**: Track per-log alpha values in `Vec<f32>`
 
 ### Unsafe Code
 - Comment why unsafe needed
@@ -105,6 +109,8 @@ cargo clippy --fix --allow-dirty --allow-staged
 - Replace magic numbers with named constants
 - Define at module or crate level
 - Use descriptive names (`NEW_LOG_DURATION_FRAMES`, `MAX_PROCESS_NAME_LENGTH`)
+- Font size constants: `FONT_SIZE_LARGE` (18), `FONT_SIZE_MEDIUM` (16), `FONT_SIZE_NORMAL` (14), `FONT_SIZE_SMALL` (12)
+- Animation constants: `ANIMATION_SPEED` (0.15), `NEW_LOG_DURATION_FRAMES` (120)
 
 ### Configuration
 - Use `serde` for serialization with `#[derive(Default)]`
@@ -117,8 +123,8 @@ cargo clippy --fix --allow-dirty --allow-staged
 ```
 rust-injector/
 ├── src/
-│   ├── main.rs      # Entry, egui UI, auto-inject logic
-│   ├── injector.rs  # Core injection, Windows API, admin checks
+│   ├── main.rs      # Entry, egui UI, animations, auto-inject logic
+│   ├── injector.rs  # Core injection, Windows API
 │   └── config.rs   # Config persistence
 ├── Cargo.toml
 ├── build.rs
@@ -138,7 +144,7 @@ rust-injector/
 - UTF-16 conversion for names
 
 ### DLL Injection Steps
-1. Validate inputs (process name, DLL path, admin privileges)
+1. Validate inputs (process name, DLL path)
 2. Get process ID by name
 3. Open with `PROCESS_ALL_ACCESS`
 4. `VirtualAllocEx` to allocate memory
@@ -147,7 +153,6 @@ rust-injector/
 7. `CreateRemoteThread` with transmuted function pointer
 8. `WaitForSingleObject` for completion
 9. Cleanup: free memory with `VirtualFreeEx()`, close handles with `CloseHandle()`
-10. Admin check: `OpenProcessToken()` + `GetTokenInformation()`
 
 ## Testing
 
@@ -163,10 +168,24 @@ Comprehensive test suite (13 tests):
 - Checks if target process is running
 - Auto-injects when process detected
 - Tracks injection state (`auto_injected` flag)
+- Shows "Active" indicator when enabled
 
-### Admin Verification
-- Checks elevation before injection attempt
-- Returns `NotElevated` error if not admin
+### Injection History
+- Tracks last 10 successful injections
+- Stores timestamps (HH:MM:SS format)
+- Displayed in "Recent Injections" section
+
+### Animation System
+- **Fade-in**: Title and new log entries fade in using alpha interpolation
+- **Slide-in**: Content slides in from below using Y-offset interpolation
+- **Window scaling**: Dialog windows scale in/out using scale interpolation
+- All animations use `lerp()` function with `ANIMATION_SPEED` constant
+
+### Admin Verification (Removed)
+- Previous version checked elevation before injection
+- Current version attempts injection with available permissions
+- Fails gracefully if admin required
+- User can check admin status via UI indicator
 
 ## Common Pitfalls
 
@@ -178,6 +197,9 @@ Comprehensive test suite (13 tests):
 - **Function pointers**: Use type aliases and transmute only when necessary
 - **Auto-inject**: Remember to reset `auto_injected` flag when process restarts
 - **Config loading**: Handle missing config files gracefully with `Config::default()`
+- **Animations**: Ensure all animation values approach targets (don't reset to 0 unnecessarily)
+- **Unicode characters**: Some Unicode characters (like →) may not display correctly in egui; use ASCII alternatives (->
+- **Admin check**: Injection no longer requires admin; will fail gracefully if permissions insufficient
 
 ## Development Workflow
 
@@ -196,4 +218,18 @@ Comprehensive test suite (13 tests):
 - CI runs on every push/PR: tests, clippy, fmt check
 - Release runs on version tags: builds binary and uploads to GitHub Releases
 - Workflows in `.github/workflows/`
+
+## Recent Improvements
+
+Major updates to the codebase:
+
+1. **Modern UI Redesign**: Clean, simple layout with consistent spacing and typography
+2. **Animation System**: Added fade-in, slide-in, and window scaling animations throughout UI
+3. **Log Animations**: Each new log entry fades in smoothly using alpha interpolation
+4. **Injection History**: Tracks last 10 successful injections with timestamps
+5. **Removed Admin Check**: Injection now works with available permissions, fails gracefully if admin required
+6. **Updated Constants**: Added font size constants and animation speed constants
+7. **Improved Window**: Larger window (700x700) for better content display
+8. **Fixed Unicode Arrow**: Changed to ASCII arrow character for better compatibility
+9. **Clean Code**: Simplified UI code, removed complex styling for better maintainability
 
