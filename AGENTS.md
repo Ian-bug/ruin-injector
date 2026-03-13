@@ -23,6 +23,9 @@ cargo clippy
 # Format
 cargo fmt
 
+# Check formatting without changes
+cargo fmt --check
+
 # Run all tests
 cargo test
 
@@ -31,6 +34,9 @@ cargo test test_name
 
 # Tests with output
 cargo test -- --nocapture
+
+# Auto-fix clippy warnings
+cargo clippy --fix --allow-dirty --allow-staged
 ```
 
 ## Code Style
@@ -51,6 +57,7 @@ cargo test -- --nocapture
 - **Structs/Enums**: PascalCase (`InjectorApp`, `InjectionError`)
 - **Functions**: snake_case (`inject_dll`, `get_process_id`)
 - **Private fields**: trailing underscore (`config_path`)
+- **Constants**: UPPER_SNAKE_CASE (`MAX_PROCESS_NAME_LENGTH`)
 
 ### Types
 - `Option<T>` for nullable (`Option<PathBuf>`)
@@ -65,6 +72,7 @@ cargo test -- --nocapture
 - Use `match` over `unwrap()`
 - Descriptive error messages
 - Log via `add_log()` method
+- Clean up resources before returning errors
 
 ### Windows API
 - All calls in `unsafe` blocks
@@ -74,6 +82,7 @@ cargo test -- --nocapture
 - Use `GetProcAddress` for addresses
 - Check `.is_invalid()` on handles
 - Get error: `unsafe { GetLastError() }`
+- Check admin privileges: `OpenProcessToken()` + `GetTokenInformation()`
 
 ### GUI/egui
 - State in app struct
@@ -83,32 +92,42 @@ cargo test -- --nocapture
 - `egui::Window` for popups
 - `egui::ScrollArea` for scroll
 - `ctx.request_repaint()` at end
+- Use index-based iteration to avoid borrow checker issues
 
 ### Unsafe Code
 - Comment why unsafe needed
 - Keep isolated and minimal
 - Prefer safe abstractions
 - Validate pointers before use
+- Use type aliases for function pointers (e.g., `LoadLibraryWFn`)
+
+### Constants
+- Replace magic numbers with named constants
+- Define at module or crate level
+- Use descriptive names (`NEW_LOG_DURATION_FRAMES`, `MAX_PROCESS_NAME_LENGTH`)
 
 ### Configuration
-- Use `serde` for serialization
+- Use `serde` for serialization with `#[derive(Default)]`
 - Store in user config via `dirs`
 - JSON via `serde_json`
-- Sensible defaults
+- Sensible defaults in `Default` impl
 
 ## Project Structure
 
 ```
 rust-injector/
 ├── src/
-│   ├── main.rs      # Entry, egui UI
-│   ├── injector.rs  # Core injection, Windows API
-│   ├── uwp.rs       # UWP permissions
+│   ├── main.rs      # Entry, egui UI, auto-inject logic
+│   ├── injector.rs  # Core injection, Windows API, admin checks
 │   └── config.rs   # Config persistence
 ├── Cargo.toml
 ├── build.rs
 ├── icon.ico
-└── AGENTS.md
+├── AGENTS.md
+└── .github/workflows/
+    ├── ci.yml          # CI testing on push/PR
+    ├── release.yml     # Automated releases on tags
+    └── README.md       # Workflow documentation
 ```
 
 ## Windows-Specific
@@ -119,32 +138,62 @@ rust-injector/
 - UTF-16 conversion for names
 
 ### DLL Injection Steps
-1. Get process ID by name
-2. Open with `PROCESS_ALL_ACCESS`
-3. `VirtualAllocEx` to allocate memory
-4. `WriteProcessMemory` for DLL path
-5. `CreateRemoteThread` with `LoadLibraryW`
-6. `WaitForSingleObject` for completion
-7. Cleanup: free memory, close handles
-
-### UWP
-- Lower privileges
-- Manual DLL permission setup
-- SID: `S-1-15-2-1`
-- Admin privileges required
+1. Validate inputs (process name, DLL path, admin privileges)
+2. Get process ID by name
+3. Open with `PROCESS_ALL_ACCESS`
+4. `VirtualAllocEx` to allocate memory
+5. `WriteProcessMemory` for DLL path (UTF-16)
+6. `GetModuleHandleA()` + `GetProcAddress()` to find `LoadLibraryW`
+7. `CreateRemoteThread` with transmuted function pointer
+8. `WaitForSingleObject` for completion
+9. Cleanup: free memory with `VirtualFreeEx()`, close handles with `CloseHandle()`
+10. Admin check: `OpenProcessToken()` + `GetTokenInformation()`
 
 ## Testing
 
-No automated tests currently. When adding:
-1. Unit tests in same file
-2. Use `#[cfg(test)]` attribute
-3. Mock Windows API calls
-4. Integration tests on test processes
+Comprehensive test suite (13 tests):
+- Unit tests in same file with `#[cfg(test)]`
+- Test process enumeration, admin checks, validation
+- Test both elevated and non-elevated scenarios
+
+## Features
+
+### Auto-Inject
+- Checkbox in UI, persists to config
+- Checks if target process is running
+- Auto-injects when process detected
+- Tracks injection state (`auto_injected` flag)
+
+### Admin Verification
+- Checks elevation before injection attempt
+- Returns `NotElevated` error if not admin
 
 ## Common Pitfalls
 
 - **Borrow checker**: Use index-based iteration in egui UI
-- **Handle leaks**: Always close handles; consider RAII
+- **Handle leaks**: Always close handles; RAII guards available for future use
 - **Null pointers**: Check `is_null()` before dereference
 - **Result types**: `windows` crate returns `Result`, not raw
-- **UTF-16**: Windows uses UTF-16; convert properly
+- **UTF-16**: Windows uses UTF-16; convert properly with `encode_utf16()`
+- **Function pointers**: Use type aliases and transmute only when necessary
+- **Auto-inject**: Remember to reset `auto_injected` flag when process restarts
+- **Config loading**: Handle missing config files gracefully with `Config::default()`
+
+## Development Workflow
+
+1. Make changes and ensure tests pass: `cargo test`
+2. Check formatting: `cargo fmt`
+3. Run linter: `cargo clippy` (should be clean)
+4. Build release: `cargo build --release`
+5. To create new release:
+   - Update version in `Cargo.toml`
+   - Commit and push
+   - Create tag: `git tag v1.1.4 && git push origin v1.1.4`
+   - GitHub Actions automatically builds and uploads release
+
+## CI/CD
+
+- CI runs on every push/PR: tests, clippy, fmt check
+- Release runs on version tags: builds binary and uploads to GitHub Releases
+- Workflows in `.github/workflows/`
+
