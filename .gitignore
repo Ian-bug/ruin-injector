@@ -13,6 +13,7 @@ Cargo.lock
 *.swp
 *.swo
 *~
+.claude/
 
 # Windows
 Thumbs.db
