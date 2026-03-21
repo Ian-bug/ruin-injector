@@ -45,19 +45,16 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      - name: Install git-cliff
+        run: cargo install git-cliff
+
       - name: Generate changelog
-        uses: orhun/git-cliff-action@v3
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: --latest --strip header
-        env:
-          OUTPUT: CHANGELOG.md
+        run: git-cliff --latest --strip header > CHANGELOG.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: target/release/ruin-injector.exe
-          body: ${{ steps.git-cliff.outputs.content }}
+          body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
