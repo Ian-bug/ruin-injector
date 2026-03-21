@@ -287,7 +287,7 @@ impl Injector {
                 }
                 return Err(InjectionError::CreateRemoteThreadFailed(
                     "Failed to get kernel32.dll module handle".to_string(),
-                ))
+                ));
             }
         };
 
@@ -299,7 +299,7 @@ impl Injector {
                     let _ = CloseHandle(process_handle);
                     return Err(InjectionError::CreateRemoteThreadFailed(
                         "Failed to find LoadLibraryW".to_string(),
-                    ))
+                    ));
                 }
             }
         };
