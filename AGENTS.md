@@ -53,6 +53,18 @@ cargo clippy --fix --allow-dirty --allow-staged
 - Opening braces same line
 - Trailing commas in multi-line
 
+### Commit Messages
+Use conventional commits for better changelog generation:
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `docs:` - Documentation changes
+- `perf:` - Performance improvements
+- `refactor:` - Code refactoring
+- `test:` - Adding/updating tests
+- `chore:` - Maintenance tasks
+
+Example: `feat: add auto-inject feature` or `fix: handle null pointer in injection`
+
 ### Naming
 - **Structs/Enums**: PascalCase (`InjectorApp`, `InjectionError`)
 - **Functions**: snake_case (`inject_dll`, `get_process_id`)
