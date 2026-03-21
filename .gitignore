@@ -42,3 +42,7 @@ Desktop.ini
 *.bak
 *.backup
 *.old
+
+# AI Assistant cache
+.skills/
+.agents/
