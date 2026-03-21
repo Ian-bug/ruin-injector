@@ -210,8 +210,12 @@ Comprehensive test suite (13 tests):
 5. To create new release:
    - Update version in `Cargo.toml`
    - Commit and push
-   - Create tag: `git tag v1.1.4 && git push origin v1.1.4`
+   - Create tag: `git tag v1.2.1 && git push origin v1.2.1`
    - GitHub Actions automatically builds and uploads release
+
+**Note**: When asked to "bump version", always do both:
+- Update version in `Cargo.toml`
+- Create and push the corresponding git tag (e.g., `v1.2.1`)
 
 ## CI/CD
 
