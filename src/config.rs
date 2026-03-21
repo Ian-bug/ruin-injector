@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -11,10 +12,14 @@ pub struct Config {
 
 impl Config {
     fn get_config_path() -> PathBuf {
-        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("ruin-injector");
-        path.push("config.json");
-        path
+        dirs::config_dir()
+            .unwrap_or_else(|| {
+                // Fallback to current directory if config_dir fails
+                // This is a last resort and may have permission issues
+                PathBuf::from(".")
+            })
+            .join("ruin-injector")
+            .join("config.json")
     }
 
     pub fn load() -> Self {
@@ -29,15 +34,30 @@ impl Config {
         Config::default()
     }
 
-    pub fn save(&self) {
+    /// Save config with atomic write to prevent corruption
+    /// Writes to temp file first, then renames to final location
+    pub fn save(&self) -> Result<(), io::Error> {
         let config_path = Self::get_config_path();
 
         if let Some(parent) = config_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent)?;
         }
 
-        if let Ok(config_str) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(&config_path, config_str);
+        let config_str = serde_json::to_string_pretty(self)?;
+        
+        // Atomic write: write to temp file, then rename
+        let temp_path = config_path.with_extension("tmp");
+        fs::write(&temp_path, config_str)?;
+        fs::rename(&temp_path, &config_path)?;
+        
+        Ok(())
+    }
+
+    /// Save config and return error message if failed (for logging in UI)
+    pub fn save_with_error_message(&self) -> Option<String> {
+        match self.save() {
+            Ok(()) => None,
+            Err(e) => Some(format!("Failed to save config: {}", e)),
         }
     }
 }

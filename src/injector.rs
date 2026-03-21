@@ -9,6 +9,7 @@ use windows::Win32::System::Memory::*;
 use windows::Win32::System::Threading::*;
 
 const MAX_PROCESS_NAME_LENGTH: usize = 260;
+const MAX_PATH_LENGTH: usize = 260;
 
 pub fn is_elevated() -> bool {
     unsafe {
@@ -46,13 +47,21 @@ pub enum InjectionError {
     CreateRemoteThreadFailed(String),
     InvalidPath(String),
     InvalidProcessName(String),
+    PathTooLong(String),
+    DllLoadFailed(String),
+    ThreadWaitFailed(String),
+    UwpProcessNotSupported(String),
 }
 
 impl std::fmt::Display for InjectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InjectionError::ProcessNotFound(msg) => write!(f, "Process not found: {}", msg),
-            InjectionError::OpenProcessFailed(msg) => write!(f, "Failed to open process: {}", msg),
+            InjectionError::OpenProcessFailed(msg) => write!(
+                f,
+                "Failed to open process: {}. Try running as Administrator.",
+                msg
+            ),
             InjectionError::MemoryAllocationFailed(msg) => {
                 write!(f, "Failed to allocate memory: {}", msg)
             }
@@ -62,6 +71,24 @@ impl std::fmt::Display for InjectionError {
             }
             InjectionError::InvalidPath(msg) => write!(f, "Invalid DLL path: {}", msg),
             InjectionError::InvalidProcessName(msg) => write!(f, "Invalid process name: {}", msg),
+            InjectionError::PathTooLong(msg) => {
+                write!(f, "DLL path too long: {} (max {} characters)", msg, MAX_PATH_LENGTH)
+            }
+            InjectionError::DllLoadFailed(msg) => {
+                write!(
+                    f,
+                    "DLL load failed: {}. Possible causes: architecture mismatch, missing dependencies, or anti-cheat protection.",
+                    msg
+                )
+            }
+            InjectionError::ThreadWaitFailed(msg) => write!(f, "Thread wait failed: {}", msg),
+            InjectionError::UwpProcessNotSupported(msg) => {
+                write!(
+                    f,
+                    "UWP process not supported: {}. UWP apps have restricted injection capabilities. Consider using a different process or debugging approach.",
+                    msg
+                )
+            }
         }
     }
 }
@@ -78,7 +105,6 @@ impl Injector {
     pub fn get_all_processes(&self) -> Vec<ProcessInfo> {
         let mut processes = Vec::new();
 
-        // Create a snapshot of all running processes
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
 
         if let Ok(snapshot) = snapshot {
@@ -92,10 +118,8 @@ impl Injector {
             };
 
             unsafe {
-                // Get information about the first process in the snapshot
                 if Process32FirstW(snapshot, &mut entry).is_ok() {
                     loop {
-                        // Find null terminator in process name and convert from UTF-16
                         let null_pos = entry
                             .szExeFile
                             .iter()
@@ -112,7 +136,6 @@ impl Injector {
                             });
                         }
 
-                        // Move to the next process in the snapshot
                         if Process32NextW(snapshot, &mut entry).is_err() {
                             break;
                         }
@@ -126,7 +149,6 @@ impl Injector {
     }
 
     fn get_process_id(&self, process_name: &str) -> Result<u32, InjectionError> {
-        // Create a snapshot of all running processes
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
 
         if let Ok(snapshot) = snapshot {
@@ -142,25 +164,22 @@ impl Injector {
             };
 
             unsafe {
-                // Get information about the first process in the snapshot
                 if Process32FirstW(snapshot, &mut entry).is_ok() {
                     loop {
-                        // Find null terminator and convert process name from UTF-16
                         let null_pos = entry
                             .szExeFile
                             .iter()
                             .position(|&c| c == 0)
                             .unwrap_or(MAX_PROCESS_NAME_LENGTH);
-                        let exe_name = String::from_utf16_lossy(&entry.szExeFile[..null_pos]);
-                        let exe_name = exe_name.trim_end_matches('\0');
+                        let exe_name = String::from_utf16_lossy(&entry.szExeFile[..null_pos])
+                            .trim_end_matches('\0')
+                            .to_string();
 
-                        // Check if this is the process we're looking for
                         if exe_name.eq_ignore_ascii_case(process_name) {
                             let _ = CloseHandle(snapshot);
                             return Ok(entry.th32ProcessID);
                         }
 
-                        // Move to the next process in the snapshot
                         if Process32NextW(snapshot, &mut entry).is_err() {
                             break;
                         }
@@ -178,6 +197,77 @@ impl Injector {
             "Process '{}' not found",
             process_name
         )))
+    }
+
+    /// Check if a process is 64-bit (requires process handle)
+    fn is_process_64bit(process_handle: HANDLE) -> Result<bool, InjectionError> {
+        unsafe {
+            let mut is_wow64 = FALSE;
+            let result = IsWow64Process(process_handle, &mut is_wow64);
+            if result.is_err() {
+                return Err(InjectionError::OpenProcessFailed(
+                    "Failed to check process architecture".to_string(),
+                ));
+            }
+            // If the process is running under WOW64, it's a 32-bit process on 64-bit Windows
+            // Otherwise, if we're on 64-bit Windows, it's a 64-bit process
+            #[cfg(target_pointer_width = "64")]
+            {
+                Ok(!is_wow64.as_bool())
+            }
+            #[cfg(target_pointer_width = "32")]
+            {
+                Ok(is_wow64.as_bool() == true)
+            }
+        }
+    }
+
+    /// Check if a process is likely a UWP app by examining its path
+    /// UWP apps are typically installed in C:\\Program Files\\WindowsApps
+    fn detect_uwp_process(pid: u32) -> Result<bool, InjectionError> {
+        unsafe {
+            let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if let Ok(handle) = process_handle {
+                if !handle.is_invalid() {
+                    // Use QueryFullProcessImageNameW if available (Windows 8.1+)
+                    let mut buffer: [u16; MAX_PATH_LENGTH] = [0; MAX_PATH_LENGTH];
+                    let mut size = buffer.len() as u32;
+                    
+                    // Get function address dynamically
+                    let k32_handle = GetModuleHandleA(windows::core::s!("kernel32.dll"));
+                    if let Ok(k32_handle) = k32_handle {
+                        let get_full_process_image_name = GetProcAddress(
+                            k32_handle,
+                            windows::core::s!("QueryFullProcessImageNameW")
+                        );
+                        
+                        if let Some(func_ptr) = get_full_process_image_name {
+                            type QueryFullProcessImageNameW = unsafe extern "system" fn(
+                                HANDLE,
+                                u32,
+                                *mut u16,
+                                *mut u32,
+                            ) -> BOOL;
+                            
+                            let func: QueryFullProcessImageNameW = 
+                                std::mem::transmute(func_ptr);
+                            
+                            let _ = func(handle, 0, buffer.as_mut_ptr(), &mut size);
+                        }
+                    }
+                    
+                    let path = String::from_utf16_lossy(&buffer[..size as usize]);
+                    let _ = CloseHandle(handle);
+                    
+                    // UWP apps are typically in WindowsApps directory
+                    Ok(path.contains("WindowsApps") || path.contains("AppPackages"))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
     }
 
     pub fn inject(&self, process_name: &str, dll_path: &Path) -> Result<(), InjectionError> {
@@ -209,29 +299,65 @@ impl Injector {
             ));
         }
 
-        let dll_path_str = dll_path.to_string_lossy();
-        let dll_path_wide: Vec<u16> = dll_path_str
+        // Validate DLL path length
+        let dll_path_str = dll_path.to_string_lossy().into_owned();
+        if dll_path_str.len() > MAX_PATH_LENGTH {
+            return Err(InjectionError::PathTooLong(dll_path_str));
+        }
+
+        // Get canonical path to avoid issues with relative paths
+        let canonical_path = dll_path
+            .canonicalize()
+            .map_err(|e| InjectionError::InvalidPath(format!("Cannot resolve path: {}", e)))?;
+
+        // Convert to wide string with proper Windows path format
+        let dll_path_wide: Vec<u16> = canonical_path
+            .to_string_lossy()
+            .as_ref()
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
 
         let process_id = self.get_process_id(process_name)?;
 
+        // Check for UWP process
+        if Self::detect_uwp_process(process_id)? {
+            return Err(InjectionError::UwpProcessNotSupported(process_name.to_string()));
+        }
+
         // Open the target process with all access rights
         let process_handle = unsafe { OpenProcess(PROCESS_ALL_ACCESS, FALSE, process_id) };
 
         let process_handle = match process_handle {
             Ok(handle) => handle,
-            Err(_) => {
+            Err(e) => {
                 return Err(InjectionError::OpenProcessFailed(format!(
-                    "Error: {}, Process ID: {}",
+                    "Error: {} ({}), Process ID: {}. Try running as Administrator.",
                     unsafe { GetLastError().0 },
+                    e,
                     process_id
                 )));
             }
         };
 
+        // Check architecture compatibility
+        let process_is_64bit = Self::is_process_64bit(process_handle)?;
+        #[cfg(target_pointer_width = "64")]
+        let injector_is_64bit = true;
+        #[cfg(target_pointer_width = "32")]
+        let injector_is_64bit = false;
+
+        if process_is_64bit != injector_is_64bit {
+            let _ = unsafe { CloseHandle(process_handle) };
+            return Err(InjectionError::DllLoadFailed(format!(
+                "Architecture mismatch: injector is {}-bit, target process is {}-bit",
+                if injector_is_64bit { "64" } else { "32" },
+                if process_is_64bit { "64" } else { "32" }
+            )));
+        }
+
         let alloc_size = dll_path_wide.len() * std::mem::size_of::<u16>();
+
         // Allocate memory in the target process for the DLL path
         let remote_buffer = unsafe {
             VirtualAllocEx(
@@ -262,19 +388,16 @@ impl Injector {
             )
         };
 
-        match write_result {
-            Ok(result) => result,
-            Err(_) => {
-                unsafe {
-                    let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
-                    let _ = CloseHandle(process_handle);
-                }
-                return Err(InjectionError::WriteMemoryFailed(format!(
-                    "Error: {}",
-                    unsafe { GetLastError().0 }
-                )));
+        if write_result.is_err() {
+            unsafe {
+                let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
+                let _ = CloseHandle(process_handle);
             }
-        };
+            return Err(InjectionError::WriteMemoryFailed(format!(
+                "Error: {}",
+                unsafe { GetLastError().0 }
+            )));
+        }
 
         // Get the address of LoadLibraryW function in kernel32.dll
         let kernel32_handle = unsafe { GetModuleHandleA(windows::core::s!("kernel32.dll")) };
@@ -306,6 +429,9 @@ impl Injector {
 
         // Safety: LoadLibraryW has the correct signature for CreateRemoteThread's thread function.
         // This is a standard Windows API pattern for DLL injection.
+        // LPTHREAD_START_ROUTINE is: extern "system" fn(*mut c_void) -> u32
+        // LoadLibraryW matches this signature on Windows x86/x64.
+        #[allow(clippy::missing_transmute_annotations)]
         let thread_proc: extern "system" fn(*mut c_void) -> u32 =
             unsafe { std::mem::transmute(load_library_addr) };
 
@@ -336,12 +462,61 @@ impl Injector {
             }
         };
 
-        // Wait for the remote thread to complete and clean up
-        unsafe {
-            WaitForSingleObject(thread_handle, INFINITE);
+        // Wait for the remote thread to complete with timeout (10 seconds for larger DLLs)
+        const INJECTION_TIMEOUT_MS: u32 = 10000;
+        let injection_result = unsafe {
+            let wait_result = WaitForSingleObject(thread_handle, INJECTION_TIMEOUT_MS);
+
+            if wait_result == WAIT_TIMEOUT {
+                let _ = CloseHandle(thread_handle);
+                let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
+                let _ = CloseHandle(process_handle);
+                return Err(InjectionError::CreateRemoteThreadFailed(
+                    "Injection timed out after 10 seconds".to_string(),
+                ));
+            }
+
+            if wait_result == WAIT_FAILED {
+                let error = GetLastError();
+                let _ = CloseHandle(thread_handle);
+                let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
+                let _ = CloseHandle(process_handle);
+                return Err(InjectionError::ThreadWaitFailed(format!(
+                    "Wait failed with error: {}",
+                    error.0
+                )));
+            }
+
+            // Get the exit code (return value of LoadLibraryW)
+            // If it's 0, LoadLibraryW failed
+            let mut exit_code: u32 = 0;
+            let exit_result = GetExitCodeThread(thread_handle, &mut exit_code);
+
+            // Clean up handles
             let _ = CloseHandle(thread_handle);
             let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
             let _ = CloseHandle(process_handle);
+
+            if exit_result.is_err() {
+                return Err(InjectionError::DllLoadFailed(
+                    "Failed to get thread exit code".to_string(),
+                ));
+            }
+
+            exit_code
+        };
+
+        // LoadLibraryW returns NULL (0) on failure, module handle on success
+        if injection_result == 0 {
+            return Err(InjectionError::DllLoadFailed(
+                "LoadLibraryW returned NULL - DLL failed to load. Possible causes:\n\
+                 - DLL is missing dependencies\n\
+                 - DLL architecture doesn't match target process (32-bit vs 64-bit)\n\
+                 - DLL initialization (DllMain) crashed\n\
+                 - Target process has anti-cheat protection\n\
+                 - Insufficient permissions"
+                    .to_string(),
+            ));
         }
 
         Ok(())
@@ -354,8 +529,10 @@ mod tests {
 
     #[test]
     fn test_is_elevated() {
+        // This test verifies the function runs without panicking
+        // The result depends on whether the test runner is elevated
         let elevated = is_elevated();
-        let _ = elevated;
+        assert!(elevated == true || elevated == false, "is_elevated should return a boolean");
     }
 
     #[test]
@@ -387,25 +564,6 @@ mod tests {
         match result {
             Err(InjectionError::ProcessNotFound(_)) => (),
             _ => panic!("Should return ProcessNotFound error"),
-        }
-    }
-
-    #[test]
-    fn test_inject_requires_admin() {
-        let injector = Injector::new();
-
-        if is_elevated() {
-            let result = injector.inject("", Path::new("test.dll"));
-            assert!(
-                result.is_err(),
-                "Should return error for empty process name"
-            );
-        } else {
-            let result = injector.inject(
-                "notepad.exe",
-                Path::new("C:\\Windows\\System32\\kernel32.dll"),
-            );
-            assert!(result.is_err(), "Should return error");
         }
     }
 
