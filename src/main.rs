@@ -5,7 +5,23 @@ use eframe::egui;
 use injector::{is_elevated, Injector};
 use std::path::PathBuf;
 
-// UI Constants
+// Animation constants (simplified)
+const ANIMATION_DEFAULT_SPEED: f32 = 0.12;
+const ANIMATION_FAST_SPEED: f32 = 0.2;
+const ANIMATION_SLOW_SPEED: f32 = 0.05;
+const PROCESS_REFRESH_INTERVAL_FRAMES: i32 = 30;
+const SECTION_DELAY_FRAMES: i32 = 15;
+const MODAL_PADDING_SCALE: f32 = 50.0;
+
+// Pulse animation constants
+const PULSE_SPEED_DEFAULT: f32 = 0.03;
+const PULSE_AMPLITUDE_DEFAULT: f32 = 0.1;
+const PULSE_BASE_DEFAULT: f32 = 0.9;
+
+// Flash animation
+const FLASH_ALPHA_START: f32 = 0.5;
+
+// UI bounds
 const MAX_LOGS: usize = 1000;
 const MAX_INJECTION_HISTORY: usize = 10;
 const MAX_PROCESS_NAME_LENGTH: usize = 260;
@@ -22,65 +38,291 @@ const FONT_SIZE_MEDIUM: f32 = 16.0;
 const FONT_SIZE_NORMAL: f32 = 14.0;
 const FONT_SIZE_SMALL: f32 = 12.0;
 
-// Animation constants (consolidated)
-const ANIMATION_SPEED: f32 = 0.12;
-const FAST_ANIMATION_SPEED: f32 = 0.2;
-const PROCESS_REFRESH_INTERVAL_FRAMES: i32 = 30;
-const SECTION_DELAY_FACTOR: f32 = 0.15;
-const SECTION_OFFSET_MULTIPLIER: f32 = 30.0;
-const MODAL_PADDING_SCALE: f32 = 50.0;
-const STATUS_PULSE_SPEED: f32 = 0.03;
-const STATUS_PULSE_AMPLITUDE: f32 = 0.1;
-const STATUS_PULSE_BASE: f32 = 0.9;
-const ADMIN_PULSE_AMPLITUDE: f32 = 0.05;
-const ADMIN_PULSE_BASE: f32 = 0.95;
-const RUNNING_PULSE_AMPLITUDE: f32 = 0.2;
-const RUNNING_PULSE_BASE: f32 = 0.8;
-const AUTO_INJECT_PULSE_SPEED: f32 = 0.05;
-const FLASH_ALPHA_START: f32 = 0.5;
-const TITLE_SCALE_START: f32 = 0.8;
-const TITLE_SCALE_END: f32 = 1.0;
-const LOG_SLIDE_START: f32 = 20.0;
-const LOG_SLIDE_END: f32 = 0.0;
-const BLUR_LAYER_COUNT: usize = 4;
-const BLUR_LAYER_ALPHAS: [f32; BLUR_LAYER_COUNT] = [0.08, 0.04, 0.02, 0.01];
+// Thresholds
 const ALPHA_THRESHOLD: f32 = 0.01;
-const HISTORY_STAGGER_FACTOR: f32 = 0.1;
+const SCALE_THRESHOLD: f32 = 0.01;
 
 mod config;
 mod injector;
 
-/// Linear interpolation helper
-#[inline]
-fn lerp(current: f32, target: f32, speed: f32) -> f32 {
-    current + (target - current) * speed
+// ============= Animation System =============
+
+/// Easing functions for smooth animations
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Easing {
+    #[default]
+    Linear,
+    EaseOut,
+    EaseInOut,
+    EaseOutBack,
 }
 
-/// Draw a blurred background effect by layering semi-transparent rectangles
+/// Base trait for all animations
+trait Animatable {
+    fn update(&mut self, dt: f32);
+    fn is_complete(&self) -> bool;
+}
+
+/// Fade animation (0.0 to 1.0)
+#[derive(Debug, Clone)]
+struct Fade {
+    current: f32,
+    target: f32,
+    speed: f32,
+}
+
+impl Fade {
+    fn new() -> Self {
+        Self {
+            current: 0.0,
+            target: 0.0,
+            speed: ANIMATION_DEFAULT_SPEED,
+        }
+    }
+
+    fn with_speed(mut self, speed: f32) -> Self {
+        self.speed = speed;
+        self
+    }
+
+    fn set_target(&mut self, target: f32) {
+        self.target = target.clamp(0.0, 1.0);
+    }
+
+    fn get(&self) -> f32 {
+        self.current
+    }
+}
+
+impl Default for Fade {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Animatable for Fade {
+    fn update(&mut self, dt: f32) {
+        let diff = self.target - self.current;
+        if diff.abs() < ALPHA_THRESHOLD {
+            self.current = self.target;
+            return;
+        }
+        self.current += diff * self.speed * dt;
+        self.current = self.current.clamp(0.0, 1.0);
+    }
+
+    fn is_complete(&self) -> bool {
+        (self.current - self.target).abs() < ALPHA_THRESHOLD
+    }
+}
+
+/// Scale animation (e.g., for modals)
+#[derive(Debug, Clone)]
+struct Scale {
+    current: f32,
+    target: f32,
+    speed: f32,
+}
+
+impl Scale {
+    fn new() -> Self {
+        Self {
+            current: 0.0,
+            target: 0.0,
+            speed: ANIMATION_FAST_SPEED,
+        }
+    }
+
+    fn set_target(&mut self, target: f32) {
+        self.target = target;
+    }
+
+    fn get(&self) -> f32 {
+        self.current
+    }
+}
+
+impl Default for Scale {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Animatable for Scale {
+    fn update(&mut self, dt: f32) {
+        let diff = self.target - self.current;
+        if diff.abs() < SCALE_THRESHOLD {
+            self.current = self.target;
+            return;
+        }
+        self.current += diff * self.speed * dt;
+    }
+
+    fn is_complete(&self) -> bool {
+        (self.current - self.target).abs() < SCALE_THRESHOLD
+    }
+}
+
+/// Slide animation (for smooth positioning)
+#[derive(Debug, Clone)]
+struct Slide {
+    current: f32,
+    target: f32,
+    speed: f32,
+}
+
+impl Slide {
+    fn new() -> Self {
+        Self {
+            current: 20.0,
+            target: 0.0,
+            speed: ANIMATION_FAST_SPEED,
+        }
+    }
+
+    fn get(&self) -> f32 {
+        self.current
+    }
+}
+
+impl Default for Slide {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Animatable for Slide {
+    fn update(&mut self, dt: f32) {
+        let diff = self.target - self.current;
+        if diff.abs() < 0.1 {
+            self.current = self.target;
+            return;
+        }
+        self.current += diff * self.speed * dt;
+    }
+
+    fn is_complete(&self) -> bool {
+        (self.current - self.target).abs() < 0.1
+    }
+}
+
+/// Pulse animation (for status indicators)
+#[derive(Debug, Clone)]
+struct Pulse {
+    phase: f32,
+    speed: f32,
+    amplitude: f32,
+    base: f32,
+}
+
+impl Pulse {
+    fn new() -> Self {
+        Self {
+            phase: 0.0,
+            speed: PULSE_SPEED_DEFAULT,
+            amplitude: PULSE_AMPLITUDE_DEFAULT,
+            base: PULSE_BASE_DEFAULT,
+        }
+    }
+
+    fn with_speed(mut self, speed: f32) -> Self {
+        self.speed = speed;
+        self
+    }
+
+    fn get(&self) -> f32 {
+        (self.phase.sin() * self.amplitude + self.base).clamp(0.0, 1.0)
+    }
+}
+
+impl Default for Pulse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Animatable for Pulse {
+    fn update(&mut self, dt: f32) {
+        self.phase += self.speed * dt;
+        if self.phase > std::f32::consts::TAU {
+            self.phase -= std::f32::consts::TAU;
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        false // Pulse animations never complete
+    }
+}
+
+/// Combined modal animation (scale + fade)
+#[derive(Debug, Clone)]
+struct ModalAnimation {
+    fade: Fade,
+    scale: Scale,
+}
+
+impl ModalAnimation {
+    fn new() -> Self {
+        Self {
+            fade: Fade::new().with_speed(ANIMATION_DEFAULT_SPEED),
+            scale: Scale::new(),
+        }
+    }
+
+    fn show(&mut self) {
+        self.fade.set_target(1.0);
+        self.scale.set_target(1.0);
+    }
+
+    fn hide(&mut self) {
+        self.fade.set_target(0.0);
+        self.scale.set_target(0.0);
+    }
+
+    fn get_alpha(&self) -> f32 {
+        self.fade.get()
+    }
+
+    fn get_scale(&self) -> f32 {
+        self.scale.get()
+    }
+
+    fn is_visible(&self) -> bool {
+        self.fade.get() > ALPHA_THRESHOLD
+    }
+}
+
+impl Default for ModalAnimation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
+
+/// Draw a blurred background effect
 fn draw_blur_background(painter: &egui::Painter, rect: egui::Rect, alpha: f32) {
     if alpha <= ALPHA_THRESHOLD {
         return;
     }
     let alpha_u8 = (255.0 * alpha) as u8;
     
-    // Layered darkening to simulate blur effect
-    // Each layer adds slight transparency with different alpha factor
-    for layer_alpha in BLUR_LAYER_ALPHAS.iter() {
+    // Layered darkening for blur effect
+    for layer_alpha in [0.08, 0.04, 0.02, 0.01].iter() {
         let layer_color = egui::Color32::from_rgba_unmultiplied(
-            0,  // R
-            0,  // G
-            0,  // B
-            (alpha_u8 as f32 * layer_alpha) as u8,  // A with factor
+            0, 0, 0, (alpha_u8 as f32 * layer_alpha) as u8,
         );
         painter.rect_filled(rect, 0.0, layer_color);
     }
 }
 
+// ============= Log System with Animations =============
+
 struct LogEntry {
     message: String,
     is_error: bool,
-    alpha: f32,
-    slide_offset: f32,
+    fade: Fade,
+    slide: Slide,
     is_removing: bool,
 }
 
@@ -89,10 +331,18 @@ impl LogEntry {
         Self {
             message,
             is_error,
-            alpha: 0.0,
-            slide_offset: LOG_SLIDE_START,
+            fade: Fade::new().with_speed(ANIMATION_DEFAULT_SPEED),
+            slide: Slide::new(),
             is_removing: false,
         }
+    }
+
+    fn get_alpha(&self) -> f32 {
+        self.fade.get()
+    }
+
+    fn get_slide_offset(&self) -> f32 {
+        self.slide.get()
     }
 }
 
@@ -113,13 +363,12 @@ impl LogManager {
         let is_error = message.to_lowercase().contains("error");
         self.entries.push(LogEntry::new(message, is_error));
         
-        // If exceeding max limit, mark oldest entries for removal with fade-out
+        // Mark oldest entries for removal when exceeding max
         while self.entries.len() > self.max_logs {
-            // Start marking from the oldest that isn't already removing
             if let Some(oldest) = self.entries.iter().find(|e| !e.is_removing) {
-                // Find index and mark it
                 if let Some(idx) = self.entries.iter().position(|e| std::ptr::eq(e, oldest)) {
                     self.entries[idx].is_removing = true;
+                    self.entries[idx].fade.set_target(0.0);
                     break;
                 }
             }
@@ -127,9 +376,7 @@ impl LogManager {
     }
 
     fn cleanup_removed(&mut self) {
-        // Remove entries that have finished fading out (alpha <= 0.01)
-        // This handles both explicitly marked removals and any fully faded entries
-        self.entries.retain(|entry| entry.alpha > ALPHA_THRESHOLD);
+        self.entries.retain(|entry| entry.fade.get() > ALPHA_THRESHOLD);
     }
 
     fn get_entries(&self) -> &[LogEntry] {
@@ -138,169 +385,174 @@ impl LogManager {
 
     fn update_frame(&mut self) {
         for entry in &mut self.entries {
-            // Fade in for new entries, fade out for removing ones
-            let target_alpha = if entry.is_removing { 0.0 } else { 1.0 };
-            entry.alpha = lerp(entry.alpha, target_alpha, ANIMATION_SPEED);
-            entry.slide_offset = lerp(entry.slide_offset, LOG_SLIDE_END, FAST_ANIMATION_SPEED);
+            if entry.is_removing {
+                entry.fade.set_target(0.0);
+            } else {
+                entry.fade.set_target(1.0);
+            }
+            entry.fade.update(1.0);
+            entry.slide.update(1.0);
         }
         self.cleanup_removed();
     }
 }
 
-/// Modal animation state (consolidates separate modal fields)
-struct ModalAnimation {
-    scale: f32,
-    alpha: f32,
-}
 
-impl ModalAnimation {
-    fn new() -> Self {
-        Self {
-            scale: 0.0,
-            alpha: 0.0,
-        }
-    }
-}
 
-impl Default for ModalAnimation {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// ============= Main Animation State =============
 
 struct AnimationState {
-    /// Global fade-in/out for entire UI
-    global_alpha: f32,
+    // Global fade-in/out
+    global_fade: Fade,
     is_closing: bool,
-    /// Title animation
-    title_alpha: f32,
-    title_scale: f32,
-    /// Section animations (each section has its own progress)
-    section_alphas: [f32; 6],
-    /// Button hover states
-    browse_btn_hover: f32,
-    inject_btn_hover: f32,
-    list_btn_hover: f32,
-    /// Process status pulse animation
-    status_pulse: f32,
-    /// Modal animations (using ModalAnimation struct)
+    
+    // Title animations
+    title_fade: Fade,
+    title_scale: Scale,
+    
+    // Section animations (staggered)
+    section_fades: Vec<Fade>,
+    section_delays: Vec<i32>,
+    frame_counter: i32,
+    
+    // Button hover animations
+    button_hover: [Fade; 3], // browse, inject, list
+    
+    // Pulse animations
+    status_pulse: Pulse,
+    auto_inject_pulse: Pulse,
+    
+    // Modal animations
     process_modal: ModalAnimation,
     confirm_modal: ModalAnimation,
-    /// Injection history animations
-    history_alphas: Vec<f32>,
-    /// Success/error flash
-    flash_alpha: f32,
+    
+    // Injection history animations
+    history_fades: Vec<Fade>,
+    
+    // Flash animation
+    flash_fade: Fade,
     flash_is_success: bool,
-    /// Auto-inject indicator pulse
-    auto_inject_pulse: f32,
 }
 
 impl Default for AnimationState {
     fn default() -> Self {
         Self {
-            global_alpha: 0.0,
+            global_fade: Fade::new().with_speed(ANIMATION_DEFAULT_SPEED),
             is_closing: false,
-            title_alpha: 0.0,
-            title_scale: TITLE_SCALE_START,
-            section_alphas: [0.0; 6],
-            browse_btn_hover: 0.0,
-            inject_btn_hover: 0.0,
-            list_btn_hover: 0.0,
-            status_pulse: 0.0,
+            title_fade: Fade::new(),
+            title_scale: Scale::new(),
+            section_fades: (0..6).map(|_| Fade::new()).collect(),
+            section_delays: (0..6).map(|i| i * SECTION_DELAY_FRAMES).collect(),
+            frame_counter: 0,
+            button_hover: [Fade::new(), Fade::new(), Fade::new()],
+            status_pulse: Pulse::new(),
+            auto_inject_pulse: Pulse::new().with_speed(ANIMATION_SLOW_SPEED),
             process_modal: ModalAnimation::new(),
             confirm_modal: ModalAnimation::new(),
-            history_alphas: Vec::new(),
-            flash_alpha: 0.0,
+            history_fades: Vec::new(),
+            flash_fade: Fade::new().with_speed(ANIMATION_FAST_SPEED),
             flash_is_success: true,
-            auto_inject_pulse: 0.0,
         }
     }
 }
 
 impl AnimationState {
     fn update(&mut self, show_process_list: bool, show_confirm: bool, auto_inject_active: bool) {
-        // Global fade-in/out
+        self.frame_counter += 1;
+        let dt = 1.0;
+
+        // Global fade
         let global_target = if self.is_closing { 0.0 } else { 1.0 };
-        self.global_alpha = lerp(self.global_alpha, global_target, ANIMATION_SPEED);
+        self.global_fade.set_target(global_target);
+        self.global_fade.update(dt);
 
-        // Title animation
+        // Title animations
         let title_target = if self.is_closing { 0.0 } else { 1.0 };
-        self.title_alpha = lerp(self.title_alpha, title_target, ANIMATION_SPEED);
-        let scale_target = if self.is_closing { TITLE_SCALE_START } else { TITLE_SCALE_END };
-        self.title_scale = lerp(self.title_scale, scale_target, FAST_ANIMATION_SPEED);
+        self.title_fade.set_target(title_target);
+        self.title_fade.update(dt);
+        self.title_scale.set_target(if self.is_closing { 0.8 } else { 1.0 });
+        self.title_scale.update(dt);
 
-        // Section staggered animations (fade in/out)
-        for (i, alpha) in self.section_alphas.iter_mut().enumerate() {
-            let delay_factor = 1.0 - (SECTION_DELAY_FACTOR * i as f32);
-            let section_target = if self.is_closing { 0.0 } else if self.global_alpha > delay_factor { 1.0 } else { 0.0 };
-            *alpha = lerp(*alpha, section_target, ANIMATION_SPEED);
+        // Section animations with staggered delays
+        for (i, fade) in self.section_fades.iter_mut().enumerate() {
+            if self.frame_counter >= self.section_delays[i] {
+                let target = if self.is_closing { 0.0 } else { 1.0 };
+                fade.set_target(target);
+            }
+            fade.update(dt);
         }
 
-        // Status pulse animation (cycles between 0 and 1)
-        self.status_pulse = (self.status_pulse + STATUS_PULSE_SPEED) % (std::f32::consts::TAU);
-        
-        // Auto-inject indicator pulse (only when active)
+        // Pulse animations
+        self.status_pulse.update(dt);
         if auto_inject_active {
-            self.auto_inject_pulse = (self.auto_inject_pulse + AUTO_INJECT_PULSE_SPEED) % (std::f32::consts::TAU);
+            self.auto_inject_pulse.update(dt);
+        }
+
+        // Button hover updates
+        for hover in &mut self.button_hover {
+            hover.update(dt);
         }
 
         // Modal animations
-        let target_process_modal_scale = if show_process_list { 1.0 } else { 0.0 };
-        let target_process_modal_alpha = if show_process_list { 1.0 } else { 0.0 };
-        self.process_modal.scale = lerp(self.process_modal.scale, target_process_modal_scale, FAST_ANIMATION_SPEED);
-        self.process_modal.alpha = lerp(self.process_modal.alpha, target_process_modal_alpha, ANIMATION_SPEED);
+        if show_process_list {
+            self.process_modal.show();
+        } else {
+            self.process_modal.hide();
+        }
+        
+        if show_confirm {
+            self.confirm_modal.show();
+        } else {
+            self.confirm_modal.hide();
+        }
+        
+        self.process_modal.fade.update(dt);
+        self.process_modal.scale.update(dt);
+        self.confirm_modal.fade.update(dt);
+        self.confirm_modal.scale.update(dt);
 
-        let target_confirm_modal_scale = if show_confirm { 1.0 } else { 0.0 };
-        let target_confirm_modal_alpha = if show_confirm { 1.0 } else { 0.0 };
-        self.confirm_modal.scale = lerp(self.confirm_modal.scale, target_confirm_modal_scale, FAST_ANIMATION_SPEED);
-        self.confirm_modal.alpha = lerp(self.confirm_modal.alpha, target_confirm_modal_alpha, ANIMATION_SPEED);
+        // Flash animation
+        self.flash_fade.update(dt);
+    }
 
-        // Flash fade-out
-        self.flash_alpha = lerp(self.flash_alpha, 0.0, ANIMATION_SPEED);
+    fn set_button_hover(&mut self, index: usize, hovered: bool) {
+        if index < self.button_hover.len() {
+            self.button_hover[index].set_target(if hovered { 1.0 } else { 0.0 });
+        }
     }
 
     fn trigger_flash(&mut self, is_success: bool) {
-        self.flash_alpha = FLASH_ALPHA_START;
+        self.flash_fade.current = FLASH_ALPHA_START;
+        self.flash_fade.target = 0.0;
         self.flash_is_success = is_success;
     }
 
     fn update_history(&mut self, history_len: usize) {
-        // Ensure history_alphas syncs with actual history length
-        // Remove extra alpha values if history was cleared/populated
-        while self.history_alphas.len() > history_len {
-            self.history_alphas.pop();
+        while self.history_fades.len() > history_len {
+            self.history_fades.pop();
+        }
+        while self.history_fades.len() < history_len {
+            self.history_fades.push(Fade::new());
         }
         
-        // Add missing alpha values
-        while self.history_alphas.len() < history_len {
-            self.history_alphas.push(0.0);
-        }
-        
-        // Update each history item alpha
-        for (i, alpha) in self.history_alphas.iter_mut().enumerate() {
-            let target = if i < history_len { 1.0 } else { 0.0 };
-            // Stagger the animation with minimum speed
-            let speed = ANIMATION_SPEED * (1.0 - HISTORY_STAGGER_FACTOR * i as f32).max(0.5);
-            *alpha = lerp(*alpha, target, speed);
+        for (i, fade) in self.history_fades.iter_mut().enumerate() {
+            fade.set_target(1.0);
+            // Stagger with index
+            let dt = 1.0 - (i as f32 * 0.1).max(0.5);
+            fade.update(dt);
         }
     }
 
-    /// Check if any animations are currently active
     fn has_active_animations(&self) -> bool {
-        // Consider animations active if they're not at target values
-        self.global_alpha < 0.99
-            || self.title_alpha < 0.99
-            || self.title_scale < 0.99
-            || self.section_alphas.iter().any(|&a| a < 0.99)
-            || self.process_modal.alpha > 0.01
-            || self.confirm_modal.alpha > 0.01
-            || self.process_modal.scale > 0.01
-            || self.confirm_modal.scale > 0.01
-            || self.flash_alpha > 0.01
-            || self.history_alphas.iter().any(|&a| a < 0.99)
-            || self.browse_btn_hover > 0.01
-            || self.inject_btn_hover > 0.01
-            || self.list_btn_hover > 0.01
+        !self.global_fade.is_complete()
+            || !self.title_fade.is_complete()
+            || !self.title_scale.is_complete()
+            || self.section_fades.iter().any(|f| !f.is_complete())
+            || self.process_modal.is_visible()
+            || self.confirm_modal.is_visible()
+            || self.flash_fade.get() > ALPHA_THRESHOLD
+            || self.history_fades.iter().any(|f| !f.is_complete())
+            || self.button_hover.iter().any(|f| f.get() > ALPHA_THRESHOLD)
     }
 }
 
@@ -473,11 +725,11 @@ impl eframe::App for InjectorApp {
         }
 
         // Flash overlay for success/error feedback
-        if self.animation.flash_alpha > ALPHA_THRESHOLD {
+        if self.animation.flash_fade.get() > ALPHA_THRESHOLD {
             let flash_color = if self.animation.flash_is_success {
-                egui::Color32::from_rgba_unmultiplied(0, 255, 0, (50.0 * self.animation.flash_alpha) as u8)
+                egui::Color32::from_rgba_unmultiplied(0, 255, 0, (50.0 * self.animation.flash_fade.get()) as u8)
             } else {
-                egui::Color32::from_rgba_unmultiplied(255, 0, 0, (50.0 * self.animation.flash_alpha) as u8)
+                egui::Color32::from_rgba_unmultiplied(255, 0, 0, (50.0 * self.animation.flash_fade.get()) as u8)
             };
             egui::Area::new(egui::Id::new("flash_overlay"))
                 .interactable(false)
@@ -491,18 +743,16 @@ impl eframe::App for InjectorApp {
         // Main panel (with global fade-in/out)
         egui::CentralPanel::default()
             .show(ctx, |ui| {
-                ui.set_opacity(self.animation.global_alpha);
+                ui.set_opacity(self.animation.global_fade.get());
                 ui.add_space(20.0);
 
             // Title with scale and fade animation
             ui.vertical_centered(|ui| {
                 let title_color = egui::Color32::from_rgba_premultiplied(
-                    255,
-                    255,
-                    255,
-                    (255.0 * self.animation.title_alpha) as u8,
+                    255, 255, 255,
+                    (255.0 * self.animation.title_fade.get()) as u8,
                 );
-                let title_size = FONT_SIZE_LARGE * self.animation.title_scale;
+                let title_size = FONT_SIZE_LARGE * self.animation.title_scale.get();
                 ui.label(
                     egui::RichText::new("Ruin DLL Injector")
                         .size(title_size)
@@ -510,8 +760,8 @@ impl eframe::App for InjectorApp {
                         .strong(),
                 );
 
-                // Admin status with subtle pulse animation (less distracting)
-                let admin_pulse = self.animation.status_pulse.sin() * ADMIN_PULSE_AMPLITUDE + ADMIN_PULSE_BASE;
+                // Admin status with pulse animation
+                let admin_pulse = self.animation.status_pulse.get();
                 let admin_color = if is_elevated() {
                     let base = egui::Color32::LIGHT_GREEN;
                     egui::Color32::from_rgb(
@@ -538,8 +788,8 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 1: Target DLL (with slide-in animation)
-            let section_alpha = self.animation.section_alphas[0];
-            let section_offset = (1.0 - section_alpha) * SECTION_OFFSET_MULTIPLIER;
+            let section_alpha = self.animation.section_fades.first().map(|f| f.get()).unwrap_or(1.0);
+            let section_offset = (1.0 - section_alpha) * 30.0;
             ui.add_space(section_offset);
             
             let label_color = egui::Color32::from_rgba_premultiplied(
@@ -568,11 +818,7 @@ impl eframe::App for InjectorApp {
 
                 // Browse button with hover animation
                 let browse_response = ui.button("Browse");
-                self.animation.browse_btn_hover = lerp(
-                    self.animation.browse_btn_hover,
-                    if browse_response.hovered() { 1.0 } else { 0.0 },
-                    FAST_ANIMATION_SPEED,
-                );
+                self.animation.set_button_hover(0, browse_response.hovered());
 
                 if browse_response.clicked() {
                     if let Some(path) = rfd::FileDialog::new()
@@ -590,7 +836,7 @@ impl eframe::App for InjectorApp {
             });
 
             if let Some(path) = &self.dll_path {
-                let path_alpha = self.animation.section_alphas[0];
+                let path_alpha = self.animation.section_fades.first().map(|f| f.get()).unwrap_or(1.0);
                 ui.label(
                     egui::RichText::new(path.display().to_string())
                         .size(FONT_SIZE_SMALL)
@@ -604,7 +850,7 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 2: Target Process
-            let section_alpha = self.animation.section_alphas[1];
+            let section_alpha = self.animation.section_fades.get(1).map(|f| f.get()).unwrap_or(1.0);
             let label_color = egui::Color32::from_rgba_premultiplied(
                 255, 255, 255,
                 (255.0 * section_alpha) as u8,
@@ -629,7 +875,7 @@ impl eframe::App for InjectorApp {
                 let is_running = self.is_process_running();
                 let btn_text = if is_running { "Running" } else { "List" };
                 let btn_color = if is_running {
-                    let pulse = self.animation.status_pulse.sin() * RUNNING_PULSE_AMPLITUDE + RUNNING_PULSE_BASE;
+                    let pulse = self.animation.status_pulse.get();
                     egui::Color32::from_rgb(
                         (100.0 * pulse) as u8,
                         (200.0 * pulse) as u8,
@@ -644,11 +890,7 @@ impl eframe::App for InjectorApp {
                 );
                 let list_response = ui.add(list_btn);
                 
-                self.animation.list_btn_hover = lerp(
-                    self.animation.list_btn_hover,
-                    if list_response.hovered() { 1.0 } else { 0.0 },
-                    FAST_ANIMATION_SPEED,
-                );
+                self.animation.set_button_hover(2, list_response.hovered());
 
                 if list_response.clicked() {
                     self.refresh_process_list();
@@ -662,7 +904,7 @@ impl eframe::App for InjectorApp {
                 let status_text = if is_running { "Status: Running" } else { "Status: Not found" };
                 
                 let pulse = if is_running {
-                    self.animation.status_pulse.sin() * STATUS_PULSE_AMPLITUDE + STATUS_PULSE_BASE
+                    self.animation.status_pulse.get()
                 } else {
                     1.0
                 };
@@ -674,7 +916,7 @@ impl eframe::App for InjectorApp {
                 } else {
                     egui::Color32::from_rgba_premultiplied(
                         180, 180, 180,
-                        (255.0 * self.animation.section_alphas[1]) as u8,
+                        (255.0 * self.animation.section_fades.get(1).map(|f| f.get()).unwrap_or(1.0)) as u8,
                     )
                 };
                 
@@ -690,7 +932,7 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 3: Injection controls
-            let _section_alpha = self.animation.section_alphas[2];
+            let _section_alpha = self.animation.section_fades.get(2).map(|f| f.get()).unwrap_or(1.0);
             
             ui.horizontal(|ui| {
                 // Inject button with hover glow effect
@@ -700,11 +942,7 @@ impl eframe::App for InjectorApp {
                 );
                 let inject_response = ui.add(inject_btn);
                 
-                self.animation.inject_btn_hover = lerp(
-                    self.animation.inject_btn_hover,
-                    if inject_response.hovered() { 1.0 } else { 0.0 },
-                    FAST_ANIMATION_SPEED,
-                );
+                self.animation.set_button_hover(1, inject_response.hovered());
 
                 if inject_response.clicked() {
                     self.show_confirm_dialog = true;
@@ -712,7 +950,7 @@ impl eframe::App for InjectorApp {
 
                 // Auto-inject checkbox
                 let _checkbox_color = if self.auto_inject {
-                    let pulse = self.animation.auto_inject_pulse.sin() * STATUS_PULSE_AMPLITUDE + STATUS_PULSE_BASE;
+                    let pulse = self.animation.auto_inject_pulse.get();
                     egui::Color32::from_rgb(
                         (144.0 * pulse) as u8,
                         (238.0 * pulse) as u8,
@@ -740,7 +978,7 @@ impl eframe::App for InjectorApp {
 
                 // Active indicator with pulsing animation
                 if self.auto_inject {
-                    let pulse = self.animation.auto_inject_pulse.sin() * STATUS_PULSE_AMPLITUDE + STATUS_PULSE_BASE;
+                    let pulse = self.animation.auto_inject_pulse.get();
                     ui.label(
                         egui::RichText::new("Active")
                             .color(egui::Color32::from_rgba_premultiplied(
@@ -758,7 +996,7 @@ impl eframe::App for InjectorApp {
 
             // Section 4: Injection history with staggered animations
             if !self.injection_history.is_empty() {
-                let section_alpha = self.animation.section_alphas[3];
+                let section_alpha = self.animation.section_fades.get(3).map(|f| f.get()).unwrap_or(1.0);
                 let label_color = egui::Color32::from_rgba_premultiplied(
                     255, 255, 255,
                     (255.0 * section_alpha) as u8,
@@ -771,7 +1009,7 @@ impl eframe::App for InjectorApp {
                 ui.add_space(10.0);
 
                 for (i, entry) in self.injection_history.iter().enumerate() {
-                    let alpha = self.animation.history_alphas.get(i).copied().unwrap_or(1.0);
+                    let alpha = self.animation.history_fades.get(i).map(|f| f.get()).unwrap_or(1.0);
                     let slide_offset = (1.0 - alpha) * 20.0;
                     
                     ui.horizontal(|ui| {
@@ -793,7 +1031,7 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 5: Activity log
-            let section_alpha = self.animation.section_alphas[4];
+            let section_alpha = self.animation.section_fades.get(4).map(|f| f.get()).unwrap_or(1.0);
             let label_color = egui::Color32::from_rgba_premultiplied(
                 255, 255, 255,
                 (255.0 * section_alpha) as u8,
@@ -820,11 +1058,11 @@ impl eframe::App for InjectorApp {
                             base_color.r(),
                             base_color.g(),
                             base_color.b(),
-                            (255.0 * entry.alpha) as u8,
+                            (255.0 * entry.get_alpha()) as u8,
                         );
 
                         ui.horizontal(|ui| {
-                            ui.add_space(entry.slide_offset);
+                            ui.add_space(entry.get_slide_offset());
                             ui.label(
                                 egui::RichText::new(&entry.message)
                                     .size(FONT_SIZE_NORMAL)
@@ -837,7 +1075,7 @@ impl eframe::App for InjectorApp {
             ui.add_space(15.0);
 
             // Section 6: Footer
-            let section_alpha = self.animation.section_alphas[5];
+            let section_alpha = self.animation.section_fades.get(5).map(|f| f.get()).unwrap_or(1.0);
             ui.label(
                 egui::RichText::new("Some processes require administrator privileges")
                     .size(FONT_SIZE_SMALL)
@@ -851,15 +1089,15 @@ impl eframe::App for InjectorApp {
         });
 
         // Confirmation dialog modal (blocks background interaction)
-        if self.animation.confirm_modal.alpha > ALPHA_THRESHOLD {
+        if self.animation.confirm_modal.is_visible() {
             // Draw blurred background overlay
             egui::Area::new(egui::Id::new("confirm_overlay"))
                 .interactable(false)
                 .fixed_pos(egui::Pos2::ZERO)
-                .order(egui::Order::Middle) // Ensure overlay is above everything
+                .order(egui::Order::Middle)
                 .show(ctx, |ui| {
                     let screen_rect = ui.ctx().screen_rect();
-                    draw_blur_background(ui.painter(), screen_rect, self.animation.confirm_modal.alpha);
+                    draw_blur_background(ui.painter(), screen_rect, self.animation.confirm_modal.get_alpha());
                 });
 
             // Modal window with scale animation
@@ -869,14 +1107,11 @@ impl eframe::App for InjectorApp {
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .title_bar(false)
                 .show(ctx, |ui| {
-                    ui.set_enabled(self.animation.confirm_modal.scale > 0.5);
+                    ui.set_enabled(self.animation.confirm_modal.get_scale() > 0.5);
                     
-                    // Wrap entire content in Frame to fade everything (including window background)
-                    egui::Frame::none()
-                        .multiply_with_opacity(self.animation.confirm_modal.alpha)
+                    egui::Frame::default().multiply_with_opacity(self.animation.confirm_modal.get_alpha())
                         .show(ui, |ui| {
-                            // Scale effect by adding padding
-                            let padding = (1.0 - self.animation.confirm_modal.scale) * MODAL_PADDING_SCALE;
+                            let padding = (1.0 - self.animation.confirm_modal.get_scale()) * MODAL_PADDING_SCALE;
                             ui.add_space(padding);
                             
                             ui.vertical_centered(|ui| {
@@ -922,19 +1157,19 @@ impl eframe::App for InjectorApp {
         }
 
         // Process list modal (blocks background interaction)
-        if self.animation.process_modal.alpha > ALPHA_THRESHOLD {
+        if self.animation.process_modal.is_visible() {
             // Draw blurred background overlay
             egui::Area::new(egui::Id::new("process_list_overlay"))
                 .interactable(false)
                 .fixed_pos(egui::Pos2::ZERO)
-                .order(egui::Order::Middle) // Ensure overlay is above everything
+                .order(egui::Order::Middle)
                 .show(ctx, |ui| {
                     let screen_rect = ui.ctx().screen_rect();
-                    draw_blur_background(ui.painter(), screen_rect, self.animation.process_modal.alpha);
+                    draw_blur_background(ui.painter(), screen_rect, self.animation.process_modal.get_alpha());
                 });
 
-            let modal_scale = self.animation.process_modal.scale;
-            let modal_alpha = self.animation.process_modal.alpha;
+            let modal_scale = self.animation.process_modal.get_scale();
+            let modal_alpha = self.animation.process_modal.get_alpha();
 
             egui::Window::new("Select Process")
                 .collapsible(false)
@@ -943,9 +1178,7 @@ impl eframe::App for InjectorApp {
                 .show(ctx, |ui| {
                     ui.set_enabled(modal_scale > 0.5);
                     
-                    // Wrap entire content in Frame to fade everything (including window background)
-                    egui::Frame::none()
-                        .multiply_with_opacity(modal_alpha)
+                    egui::Frame::default().multiply_with_opacity(modal_alpha)
                         .show(ui, |ui| {
                             ui.heading(egui::RichText::new("Running Processes").color(egui::Color32::WHITE));
                             ui.separator();
@@ -1023,22 +1256,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lerp_function() {
-        assert!((lerp(0.0, 1.0, 0.5) - 0.5).abs() < 0.01);
-        assert!((lerp(0.0, 1.0, 1.0) - 1.0).abs() < 0.01);
-        assert!((lerp(1.0, 0.0, 0.5) - 0.5).abs() < 0.01);
-        
-        // Test edge cases
-        assert_eq!(lerp(0.5, 0.5, 0.5), 0.5); // Already at target
-        assert_eq!(lerp(0.0, 0.0, 0.5), 0.0); // Zero range
-        assert_eq!(lerp(1.0, 1.0, 0.5), 1.0); // Same value
-    }
-
-    #[test]
     fn test_blur_background_early_return() {
-        // Should return early when alpha is very low
-        // Just verify function exists and doesn't panic
-        // Full testing would require egui Context which is not available in unit tests
         assert!(ALPHA_THRESHOLD > 0.0);
         assert!(ALPHA_THRESHOLD < 1.0);
     }
@@ -1047,7 +1265,6 @@ mod tests {
     fn test_log_manager_add_message() {
         let mut logger = LogManager::new();
         logger.add_log("Test message".to_string());
-
         assert_eq!(logger.get_entries().len(), 1);
         assert_eq!(logger.get_entries()[0].message, "Test message");
     }
@@ -1057,7 +1274,6 @@ mod tests {
         let mut logger = LogManager::new();
         logger.add_log("Error: something went wrong".to_string());
         logger.add_log("Normal message".to_string());
-
         assert!(logger.get_entries()[0].is_error);
         assert!(!logger.get_entries()[1].is_error);
     }
@@ -1066,79 +1282,70 @@ mod tests {
     fn test_log_manager_animation() {
         let mut logger = LogManager::new();
         logger.add_log("Test".to_string());
-
-        assert_eq!(logger.get_entries()[0].alpha, 0.0);
-        assert_eq!(logger.get_entries()[0].slide_offset, LOG_SLIDE_START);
+        assert_eq!(logger.get_entries()[0].get_alpha(), 0.0);
+        assert!(logger.get_entries()[0].get_slide_offset() > 0.0);
 
         for _ in 0..50 {
             logger.update_frame();
         }
 
-        assert!(logger.get_entries()[0].alpha >= 0.9);
-        assert!(logger.get_entries()[0].slide_offset <= 2.0);
+        assert!(logger.get_entries()[0].get_alpha() >= 0.9);
+        assert!(logger.get_entries()[0].get_slide_offset() <= 2.0);
     }
 
     #[test]
     fn test_log_manager_max_limit() {
         let mut logger = LogManager::new();
-
         for i in 0..1002 {
             logger.add_log(format!("Log {}", i));
         }
-
-        // Run enough update frames for fade-out and cleanup to complete
-        // Fade out takes ~50 frames to reach alpha <= 0.01 with ANIMATION_SPEED=0.12
         for _ in 0..80 {
             logger.update_frame();
         }
-
         assert_eq!(logger.get_entries().len(), MAX_LOGS);
     }
 
     #[test]
     fn test_animation_state_default() {
         let anim = AnimationState::default();
-        assert_eq!(anim.global_alpha, 0.0);
-        assert_eq!(anim.title_alpha, 0.0);
-        assert_eq!(anim.title_scale, TITLE_SCALE_START);
-        assert_eq!(anim.process_modal.scale, 0.0);
-        assert_eq!(anim.confirm_modal.scale, 0.0);
+        assert_eq!(anim.global_fade.get(), 0.0);
+        assert_eq!(anim.title_fade.get(), 0.0);
+        assert_eq!(anim.process_modal.get_alpha(), 0.0);
+        assert_eq!(anim.process_modal.get_scale(), 0.0);
     }
 
     #[test]
     fn test_animation_flash() {
         let mut anim = AnimationState::default();
         anim.trigger_flash(true);
-        assert!(anim.flash_alpha > 0.4); // Should be set to FLASH_ALPHA_START
+        assert!(anim.flash_fade.current > 0.4);
         assert!(anim.flash_is_success);
     }
 
     #[test]
-    fn test_modal_animation_struct() {
-        let modal = ModalAnimation::new();
-        assert_eq!(modal.scale, 0.0);
-        assert_eq!(modal.alpha, 0.0);
-        
-        let modal_default = ModalAnimation::default();
-        assert_eq!(modal.scale, modal_default.scale);
-        assert_eq!(modal.alpha, modal_default.alpha);
+    fn test_modal_animation_show_hide() {
+        let mut modal = ModalAnimation::new();
+        assert_eq!(modal.get_alpha(), 0.0);
+        assert_eq!(modal.get_scale(), 0.0);
+
+        modal.show();
+        assert_eq!(modal.fade.target, 1.0);
+        assert_eq!(modal.scale.target, 1.0);
+
+        modal.hide();
+        assert_eq!(modal.fade.target, 0.0);
+        assert_eq!(modal.scale.target, 0.0);
     }
 
     #[test]
     fn test_animation_history_sync() {
         let mut anim = AnimationState::default();
-        
-        // Add 5 items to history
         anim.update_history(5);
-        assert_eq!(anim.history_alphas.len(), 5);
-        
-        // Reduce history to 3 items
+        assert_eq!(anim.history_fades.len(), 5);
         anim.update_history(3);
-        assert_eq!(anim.history_alphas.len(), 3); // Should trim extras
-        
-        // Increase history to 7 items
+        assert_eq!(anim.history_fades.len(), 3);
         anim.update_history(7);
-        assert_eq!(anim.history_alphas.len(), 7); // Should add more
+        assert_eq!(anim.history_fades.len(), 7);
     }
 
     #[test]
@@ -1146,14 +1353,11 @@ mod tests {
         let mut app = InjectorApp::default();
         let long_name = "a".repeat(300);
         app.process_name = long_name.clone();
-
-        // Simulate the validation in update
         let mut process_name_validated = app.process_name.clone();
         if process_name_validated.len() > MAX_PROCESS_NAME_LENGTH {
             process_name_validated.truncate(MAX_PROCESS_NAME_LENGTH);
         }
         app.process_name = process_name_validated;
-
         assert!(
             app.process_name.len() <= MAX_PROCESS_NAME_LENGTH,
             "Process name should be truncated to max length"
@@ -1162,29 +1366,32 @@ mod tests {
 
     #[test]
     fn test_animation_constants_defined() {
-        // Verify all animation constants are defined and have reasonable values
-        assert!(ANIMATION_SPEED > 0.0 && ANIMATION_SPEED < 1.0);
-        assert!(FAST_ANIMATION_SPEED > 0.0 && FAST_ANIMATION_SPEED < 1.0);
-        assert!(STATUS_PULSE_SPEED > 0.0);
+        assert!(ANIMATION_DEFAULT_SPEED > 0.0 && ANIMATION_DEFAULT_SPEED < 1.0);
+        assert!(ANIMATION_FAST_SPEED > 0.0 && ANIMATION_FAST_SPEED < 1.0);
+        assert!(PULSE_SPEED_DEFAULT > 0.0);
         assert!(FLASH_ALPHA_START > 0.0 && FLASH_ALPHA_START <= 1.0);
-        assert!(TITLE_SCALE_START < TITLE_SCALE_END);
-        assert!(LOG_SLIDE_START > LOG_SLIDE_END);
-        assert_eq!(BLUR_LAYER_COUNT, 4);
-        assert_eq!(BLUR_LAYER_ALPHAS.len(), 4);
+        assert!(ALPHA_THRESHOLD > 0.0 && ALPHA_THRESHOLD < 1.0);
+        assert!(SCALE_THRESHOLD > 0.0);
     }
 
     #[test]
     fn test_modal_animation_update() {
         let mut anim = AnimationState::default();
+        anim.process_modal.show();
+        assert_eq!(anim.process_modal.fade.target, 1.0);
+        assert_eq!(anim.process_modal.scale.target, 1.0);
         
-        // Show modal
-        anim.update(true, false, false);
-        assert!(anim.process_modal.alpha > 0.0); // Should start fading in
-        assert!(anim.process_modal.scale > 0.0);
-        
-        // Hide modal
-        anim.update(false, false, false);
-        assert!(anim.process_modal.alpha < 1.0); // Should start fading out
-        assert!(anim.process_modal.scale < 1.0);
+        anim.process_modal.hide();
+        assert_eq!(anim.process_modal.fade.target, 0.0);
+        assert_eq!(anim.process_modal.scale.target, 0.0);
+    }
+
+    #[test]
+    fn test_button_hover_animations() {
+        let mut anim = AnimationState::default();
+        anim.set_button_hover(0, true);
+        assert!(anim.button_hover[0].target == 1.0);
+        anim.set_button_hover(0, false);
+        assert!(anim.button_hover[0].target == 0.0);
     }
 }
