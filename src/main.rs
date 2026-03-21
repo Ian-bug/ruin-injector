@@ -1347,8 +1347,10 @@ mod tests {
 
     #[test]
     fn test_blur_background_early_return() {
-        assert!(ALPHA_THRESHOLD > 0.0);
-        assert!(ALPHA_THRESHOLD < 1.0);
+        const {
+            assert!(ALPHA_THRESHOLD > 0.0);
+            assert!(ALPHA_THRESHOLD < 1.0);
+        }
     }
 
     #[test]
@@ -1456,12 +1458,14 @@ mod tests {
 
     #[test]
     fn test_animation_constants_defined() {
-        assert!(ANIMATION_DEFAULT_SPEED > 0.0 && ANIMATION_DEFAULT_SPEED < 1.0);
-        assert!(ANIMATION_FAST_SPEED > 0.0 && ANIMATION_FAST_SPEED < 1.0);
-        assert!(PULSE_SPEED_DEFAULT > 0.0);
-        assert!(FLASH_ALPHA_START > 0.0 && FLASH_ALPHA_START <= 1.0);
-        assert!(ALPHA_THRESHOLD > 0.0 && ALPHA_THRESHOLD < 1.0);
-        assert!(SCALE_THRESHOLD > 0.0);
+        const {
+            assert!(ANIMATION_DEFAULT_SPEED > 0.0 && ANIMATION_DEFAULT_SPEED < 1.0);
+            assert!(ANIMATION_FAST_SPEED > 0.0 && ANIMATION_FAST_SPEED < 1.0);
+            assert!(PULSE_SPEED_DEFAULT > 0.0);
+            assert!(FLASH_ALPHA_START > 0.0 && FLASH_ALPHA_START <= 1.0);
+            assert!(ALPHA_THRESHOLD > 0.0 && ALPHA_THRESHOLD < 1.0);
+            assert!(SCALE_THRESHOLD > 0.0);
+        }
     }
 
     #[test]

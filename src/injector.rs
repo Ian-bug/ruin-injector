@@ -531,12 +531,8 @@ mod tests {
     #[test]
     fn test_is_elevated() {
         // This test verifies the function runs without panicking
-        // The result depends on whether the test runner is elevated
         let elevated = is_elevated();
-        assert!(
-            elevated == true || elevated == false,
-            "is_elevated should return a boolean"
-        );
+        let _ = elevated;
     }
 
     #[test]
