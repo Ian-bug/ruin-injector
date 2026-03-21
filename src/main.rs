@@ -298,20 +298,17 @@ impl Default for ModalAnimation {
     }
 }
 
-
-
 /// Draw a blurred background effect
 fn draw_blur_background(painter: &egui::Painter, rect: egui::Rect, alpha: f32) {
     if alpha <= ALPHA_THRESHOLD {
         return;
     }
     let alpha_u8 = (255.0 * alpha) as u8;
-    
+
     // Layered darkening for blur effect
     for layer_alpha in [0.08, 0.04, 0.02, 0.01].iter() {
-        let layer_color = egui::Color32::from_rgba_unmultiplied(
-            0, 0, 0, (alpha_u8 as f32 * layer_alpha) as u8,
-        );
+        let layer_color =
+            egui::Color32::from_rgba_unmultiplied(0, 0, 0, (alpha_u8 as f32 * layer_alpha) as u8);
         painter.rect_filled(rect, 0.0, layer_color);
     }
 }
@@ -362,7 +359,7 @@ impl LogManager {
     fn add_log(&mut self, message: String) {
         let is_error = message.to_lowercase().contains("error");
         self.entries.push(LogEntry::new(message, is_error));
-        
+
         // Mark oldest entries for removal when exceeding max
         while self.entries.len() > self.max_logs {
             if let Some(oldest) = self.entries.iter().find(|e| !e.is_removing) {
@@ -376,7 +373,8 @@ impl LogManager {
     }
 
     fn cleanup_removed(&mut self) {
-        self.entries.retain(|entry| entry.fade.get() > ALPHA_THRESHOLD);
+        self.entries
+            .retain(|entry| entry.fade.get() > ALPHA_THRESHOLD);
     }
 
     fn get_entries(&self) -> &[LogEntry] {
@@ -397,38 +395,36 @@ impl LogManager {
     }
 }
 
-
-
 // ============= Main Animation State =============
 
 struct AnimationState {
     // Global fade-in/out
     global_fade: Fade,
     is_closing: bool,
-    
+
     // Title animations
     title_fade: Fade,
     title_scale: Scale,
-    
+
     // Section animations (staggered)
     section_fades: Vec<Fade>,
     section_delays: Vec<i32>,
     frame_counter: i32,
-    
+
     // Button hover animations
     button_hover: [Fade; 3], // browse, inject, list
-    
+
     // Pulse animations
     status_pulse: Pulse,
     auto_inject_pulse: Pulse,
-    
+
     // Modal animations
     process_modal: ModalAnimation,
     confirm_modal: ModalAnimation,
-    
+
     // Injection history animations
     history_fades: Vec<Fade>,
-    
+
     // Flash animation
     flash_fade: Fade,
     flash_is_success: bool,
@@ -470,7 +466,8 @@ impl AnimationState {
         let title_target = if self.is_closing { 0.0 } else { 1.0 };
         self.title_fade.set_target(title_target);
         self.title_fade.update(dt);
-        self.title_scale.set_target(if self.is_closing { 0.8 } else { 1.0 });
+        self.title_scale
+            .set_target(if self.is_closing { 0.8 } else { 1.0 });
         self.title_scale.update(dt);
 
         // Section animations with staggered delays
@@ -499,13 +496,13 @@ impl AnimationState {
         } else {
             self.process_modal.hide();
         }
-        
+
         if show_confirm {
             self.confirm_modal.show();
         } else {
             self.confirm_modal.hide();
         }
-        
+
         self.process_modal.fade.update(dt);
         self.process_modal.scale.update(dt);
         self.confirm_modal.fade.update(dt);
@@ -534,7 +531,7 @@ impl AnimationState {
         while self.history_fades.len() < history_len {
             self.history_fades.push(Fade::new());
         }
-        
+
         for (i, fade) in self.history_fades.iter_mut().enumerate() {
             fade.set_target(1.0);
             // Stagger with index
@@ -720,16 +717,29 @@ impl eframe::App for InjectorApp {
         self.logger.update_frame();
 
         // Only request repaint if animations are active (optimization)
-        if self.animation.has_active_animations() || self.show_process_list || self.show_confirm_dialog {
+        if self.animation.has_active_animations()
+            || self.show_process_list
+            || self.show_confirm_dialog
+        {
             ctx.request_repaint();
         }
 
         // Flash overlay for success/error feedback
         if self.animation.flash_fade.get() > ALPHA_THRESHOLD {
             let flash_color = if self.animation.flash_is_success {
-                egui::Color32::from_rgba_unmultiplied(0, 255, 0, (50.0 * self.animation.flash_fade.get()) as u8)
+                egui::Color32::from_rgba_unmultiplied(
+                    0,
+                    255,
+                    0,
+                    (50.0 * self.animation.flash_fade.get()) as u8,
+                )
             } else {
-                egui::Color32::from_rgba_unmultiplied(255, 0, 0, (50.0 * self.animation.flash_fade.get()) as u8)
+                egui::Color32::from_rgba_unmultiplied(
+                    255,
+                    0,
+                    0,
+                    (50.0 * self.animation.flash_fade.get()) as u8,
+                )
             };
             egui::Area::new(egui::Id::new("flash_overlay"))
                 .interactable(false)
@@ -741,15 +751,16 @@ impl eframe::App for InjectorApp {
         }
 
         // Main panel (with global fade-in/out)
-        egui::CentralPanel::default()
-            .show(ctx, |ui| {
-                ui.set_opacity(self.animation.global_fade.get());
-                ui.add_space(20.0);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.set_opacity(self.animation.global_fade.get());
+            ui.add_space(20.0);
 
             // Title with scale and fade animation
             ui.vertical_centered(|ui| {
                 let title_color = egui::Color32::from_rgba_premultiplied(
-                    255, 255, 255,
+                    255,
+                    255,
+                    255,
                     (255.0 * self.animation.title_fade.get()) as u8,
                 );
                 let title_size = FONT_SIZE_LARGE * self.animation.title_scale.get();
@@ -788,12 +799,19 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 1: Target DLL (with slide-in animation)
-            let section_alpha = self.animation.section_fades.first().map(|f| f.get()).unwrap_or(1.0);
+            let section_alpha = self
+                .animation
+                .section_fades
+                .first()
+                .map(|f| f.get())
+                .unwrap_or(1.0);
             let section_offset = (1.0 - section_alpha) * 30.0;
             ui.add_space(section_offset);
-            
+
             let label_color = egui::Color32::from_rgba_premultiplied(
-                255, 255, 255,
+                255,
+                255,
+                255,
                 (255.0 * section_alpha) as u8,
             );
             ui.label(
@@ -818,7 +836,8 @@ impl eframe::App for InjectorApp {
 
                 // Browse button with hover animation
                 let browse_response = ui.button("Browse");
-                self.animation.set_button_hover(0, browse_response.hovered());
+                self.animation
+                    .set_button_hover(0, browse_response.hovered());
 
                 if browse_response.clicked() {
                     if let Some(path) = rfd::FileDialog::new()
@@ -836,12 +855,19 @@ impl eframe::App for InjectorApp {
             });
 
             if let Some(path) = &self.dll_path {
-                let path_alpha = self.animation.section_fades.first().map(|f| f.get()).unwrap_or(1.0);
+                let path_alpha = self
+                    .animation
+                    .section_fades
+                    .first()
+                    .map(|f| f.get())
+                    .unwrap_or(1.0);
                 ui.label(
                     egui::RichText::new(path.display().to_string())
                         .size(FONT_SIZE_SMALL)
                         .color(egui::Color32::from_rgba_premultiplied(
-                            200, 200, 200,
+                            200,
+                            200,
+                            200,
                             (255.0 * path_alpha) as u8,
                         )),
                 );
@@ -850,9 +876,16 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 2: Target Process
-            let section_alpha = self.animation.section_fades.get(1).map(|f| f.get()).unwrap_or(1.0);
+            let section_alpha = self
+                .animation
+                .section_fades
+                .get(1)
+                .map(|f| f.get())
+                .unwrap_or(1.0);
             let label_color = egui::Color32::from_rgba_premultiplied(
-                255, 255, 255,
+                255,
+                255,
+                255,
                 (255.0 * section_alpha) as u8,
             );
             ui.label(
@@ -885,11 +918,9 @@ impl eframe::App for InjectorApp {
                     egui::Color32::GRAY
                 };
 
-                let list_btn = egui::Button::new(
-                    egui::RichText::new(btn_text).color(btn_color)
-                );
+                let list_btn = egui::Button::new(egui::RichText::new(btn_text).color(btn_color));
                 let list_response = ui.add(list_btn);
-                
+
                 self.animation.set_button_hover(2, list_response.hovered());
 
                 if list_response.clicked() {
@@ -901,25 +932,34 @@ impl eframe::App for InjectorApp {
             // Process status with pulsing animation
             if !self.process_name.is_empty() {
                 let is_running = self.is_process_running();
-                let status_text = if is_running { "Status: Running" } else { "Status: Not found" };
-                
+                let status_text = if is_running {
+                    "Status: Running"
+                } else {
+                    "Status: Not found"
+                };
+
                 let pulse = if is_running {
                     self.animation.status_pulse.get()
                 } else {
                     1.0
                 };
                 let status_color = if is_running {
-                    egui::Color32::from_rgba_premultiplied(
-                        144, 238, 144,
-                        (255.0 * pulse) as u8,
-                    )
+                    egui::Color32::from_rgba_premultiplied(144, 238, 144, (255.0 * pulse) as u8)
                 } else {
                     egui::Color32::from_rgba_premultiplied(
-                        180, 180, 180,
-                        (255.0 * self.animation.section_fades.get(1).map(|f| f.get()).unwrap_or(1.0)) as u8,
+                        180,
+                        180,
+                        180,
+                        (255.0
+                            * self
+                                .animation
+                                .section_fades
+                                .get(1)
+                                .map(|f| f.get())
+                                .unwrap_or(1.0)) as u8,
                     )
                 };
-                
+
                 ui.label(
                     egui::RichText::new(status_text)
                         .size(FONT_SIZE_SMALL)
@@ -932,17 +972,22 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 3: Injection controls
-            let _section_alpha = self.animation.section_fades.get(2).map(|f| f.get()).unwrap_or(1.0);
-            
+            let _section_alpha = self
+                .animation
+                .section_fades
+                .get(2)
+                .map(|f| f.get())
+                .unwrap_or(1.0);
+
             ui.horizontal(|ui| {
                 // Inject button with hover glow effect
                 let inject_btn = egui::Button::new(
-                    egui::RichText::new("Inject DLL")
-                        .color(egui::Color32::WHITE)
+                    egui::RichText::new("Inject DLL").color(egui::Color32::WHITE),
                 );
                 let inject_response = ui.add(inject_btn);
-                
-                self.animation.set_button_hover(1, inject_response.hovered());
+
+                self.animation
+                    .set_button_hover(1, inject_response.hovered());
 
                 if inject_response.clicked() {
                     self.show_confirm_dialog = true;
@@ -987,7 +1032,7 @@ impl eframe::App for InjectorApp {
                                 (144.0 * pulse) as u8,
                                 255,
                             ))
-                            .size(FONT_SIZE_SMALL)
+                            .size(FONT_SIZE_SMALL),
                     );
                 }
             });
@@ -996,9 +1041,16 @@ impl eframe::App for InjectorApp {
 
             // Section 4: Injection history with staggered animations
             if !self.injection_history.is_empty() {
-                let section_alpha = self.animation.section_fades.get(3).map(|f| f.get()).unwrap_or(1.0);
+                let section_alpha = self
+                    .animation
+                    .section_fades
+                    .get(3)
+                    .map(|f| f.get())
+                    .unwrap_or(1.0);
                 let label_color = egui::Color32::from_rgba_premultiplied(
-                    255, 255, 255,
+                    255,
+                    255,
+                    255,
                     (255.0 * section_alpha) as u8,
                 );
                 ui.label(
@@ -1009,19 +1061,24 @@ impl eframe::App for InjectorApp {
                 ui.add_space(10.0);
 
                 for (i, entry) in self.injection_history.iter().enumerate() {
-                    let alpha = self.animation.history_fades.get(i).map(|f| f.get()).unwrap_or(1.0);
+                    let alpha = self
+                        .animation
+                        .history_fades
+                        .get(i)
+                        .map(|f| f.get())
+                        .unwrap_or(1.0);
                     let slide_offset = (1.0 - alpha) * 20.0;
-                    
+
                     ui.horizontal(|ui| {
                         ui.add_space(slide_offset);
-                        ui.label(
-                            egui::RichText::new(entry)
-                                .size(FONT_SIZE_NORMAL)
-                                .color(egui::Color32::from_rgba_premultiplied(
-                                    180, 180, 180,
-                                    (255.0 * alpha) as u8,
-                                )),
-                        );
+                        ui.label(egui::RichText::new(entry).size(FONT_SIZE_NORMAL).color(
+                            egui::Color32::from_rgba_premultiplied(
+                                180,
+                                180,
+                                180,
+                                (255.0 * alpha) as u8,
+                            ),
+                        ));
                     });
                 }
                 ui.add_space(20.0);
@@ -1031,9 +1088,16 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 5: Activity log
-            let section_alpha = self.animation.section_fades.get(4).map(|f| f.get()).unwrap_or(1.0);
+            let section_alpha = self
+                .animation
+                .section_fades
+                .get(4)
+                .map(|f| f.get())
+                .unwrap_or(1.0);
             let label_color = egui::Color32::from_rgba_premultiplied(
-                255, 255, 255,
+                255,
+                255,
+                255,
                 (255.0 * section_alpha) as u8,
             );
             ui.label(
@@ -1075,12 +1139,19 @@ impl eframe::App for InjectorApp {
             ui.add_space(15.0);
 
             // Section 6: Footer
-            let section_alpha = self.animation.section_fades.get(5).map(|f| f.get()).unwrap_or(1.0);
+            let section_alpha = self
+                .animation
+                .section_fades
+                .get(5)
+                .map(|f| f.get())
+                .unwrap_or(1.0);
             ui.label(
                 egui::RichText::new("Some processes require administrator privileges")
                     .size(FONT_SIZE_SMALL)
                     .color(egui::Color32::from_rgba_premultiplied(
-                        150, 150, 150,
+                        150,
+                        150,
+                        150,
                         (255.0 * section_alpha) as u8,
                     )),
             );
@@ -1097,7 +1168,11 @@ impl eframe::App for InjectorApp {
                 .order(egui::Order::Middle)
                 .show(ctx, |ui| {
                     let screen_rect = ui.ctx().screen_rect();
-                    draw_blur_background(ui.painter(), screen_rect, self.animation.confirm_modal.get_alpha());
+                    draw_blur_background(
+                        ui.painter(),
+                        screen_rect,
+                        self.animation.confirm_modal.get_alpha(),
+                    );
                 });
 
             // Modal window with scale animation
@@ -1108,12 +1183,14 @@ impl eframe::App for InjectorApp {
                 .title_bar(false)
                 .show(ctx, |ui| {
                     ui.set_enabled(self.animation.confirm_modal.get_scale() > 0.5);
-                    
-                    egui::Frame::default().multiply_with_opacity(self.animation.confirm_modal.get_alpha())
+
+                    egui::Frame::default()
+                        .multiply_with_opacity(self.animation.confirm_modal.get_alpha())
                         .show(ui, |ui| {
-                            let padding = (1.0 - self.animation.confirm_modal.get_scale()) * MODAL_PADDING_SCALE;
+                            let padding = (1.0 - self.animation.confirm_modal.get_scale())
+                                * MODAL_PADDING_SCALE;
                             ui.add_space(padding);
-                            
+
                             ui.vertical_centered(|ui| {
                                 ui.label(
                                     egui::RichText::new("Confirm Injection")
@@ -1124,7 +1201,7 @@ impl eframe::App for InjectorApp {
                             ui.add_space(10.0);
                             ui.separator();
                             ui.add_space(10.0);
-                            
+
                             ui.label(
                                 egui::RichText::new(format!(
                                     "Inject DLL into \"{}\"?",
@@ -1133,24 +1210,24 @@ impl eframe::App for InjectorApp {
                                 .color(egui::Color32::WHITE),
                             );
                             ui.add_space(15.0);
-                            
+
                             ui.horizontal(|ui| {
                                 let confirm_btn = egui::Button::new(
-                                    egui::RichText::new("Confirm").color(egui::Color32::WHITE)
+                                    egui::RichText::new("Confirm").color(egui::Color32::WHITE),
                                 );
                                 let cancel_btn = egui::Button::new(
-                                    egui::RichText::new("Cancel").color(egui::Color32::WHITE)
+                                    egui::RichText::new("Cancel").color(egui::Color32::WHITE),
                                 );
                                 if ui.add(confirm_btn).clicked() {
                                     self.show_confirm_dialog = false;
                                     self.inject_dll();
                                 }
-                                
+
                                 if ui.add(cancel_btn).clicked() {
                                     self.show_confirm_dialog = false;
                                 }
                             });
-                            
+
                             ui.add_space(padding);
                         });
                 });
@@ -1165,7 +1242,11 @@ impl eframe::App for InjectorApp {
                 .order(egui::Order::Middle)
                 .show(ctx, |ui| {
                     let screen_rect = ui.ctx().screen_rect();
-                    draw_blur_background(ui.painter(), screen_rect, self.animation.process_modal.get_alpha());
+                    draw_blur_background(
+                        ui.painter(),
+                        screen_rect,
+                        self.animation.process_modal.get_alpha(),
+                    );
                 });
 
             let modal_scale = self.animation.process_modal.get_scale();
@@ -1177,10 +1258,14 @@ impl eframe::App for InjectorApp {
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(ctx, |ui| {
                     ui.set_enabled(modal_scale > 0.5);
-                    
-                    egui::Frame::default().multiply_with_opacity(modal_alpha)
+
+                    egui::Frame::default()
+                        .multiply_with_opacity(modal_alpha)
                         .show(ui, |ui| {
-                            ui.heading(egui::RichText::new("Running Processes").color(egui::Color32::WHITE));
+                            ui.heading(
+                                egui::RichText::new("Running Processes")
+                                    .color(egui::Color32::WHITE),
+                            );
                             ui.separator();
 
                             ui.horizontal(|ui| {
@@ -1199,10 +1284,15 @@ impl eframe::App for InjectorApp {
                                     let mut has_matches = false;
                                     for (name, pid) in &self.all_processes {
                                         let name_lower = name.to_lowercase();
-                                        if search_lower.is_empty() || name_lower.contains(&search_lower) {
+                                        if search_lower.is_empty()
+                                            || name_lower.contains(&search_lower)
+                                        {
                                             has_matches = true;
 
-                                            if ui.button(format!("{} (PID: {})", name, pid)).clicked() {
+                                            if ui
+                                                .button(format!("{} (PID: {})", name, pid))
+                                                .clicked()
+                                            {
                                                 matched_process = Some((name.clone(), *pid));
                                             }
                                         }
@@ -1380,7 +1470,7 @@ mod tests {
         anim.process_modal.show();
         assert_eq!(anim.process_modal.fade.target, 1.0);
         assert_eq!(anim.process_modal.scale.target, 1.0);
-        
+
         anim.process_modal.hide();
         assert_eq!(anim.process_modal.fade.target, 0.0);
         assert_eq!(anim.process_modal.scale.target, 0.0);

@@ -72,7 +72,11 @@ impl std::fmt::Display for InjectionError {
             InjectionError::InvalidPath(msg) => write!(f, "Invalid DLL path: {}", msg),
             InjectionError::InvalidProcessName(msg) => write!(f, "Invalid process name: {}", msg),
             InjectionError::PathTooLong(msg) => {
-                write!(f, "DLL path too long: {} (max {} characters)", msg, MAX_PATH_LENGTH)
+                write!(
+                    f,
+                    "DLL path too long: {} (max {} characters)",
+                    msg, MAX_PATH_LENGTH
+                )
             }
             InjectionError::DllLoadFailed(msg) => {
                 write!(
@@ -232,33 +236,28 @@ impl Injector {
                     // Use QueryFullProcessImageNameW if available (Windows 8.1+)
                     let mut buffer: [u16; MAX_PATH_LENGTH] = [0; MAX_PATH_LENGTH];
                     let mut size = buffer.len() as u32;
-                    
+
                     // Get function address dynamically
                     let k32_handle = GetModuleHandleA(windows::core::s!("kernel32.dll"));
                     if let Ok(k32_handle) = k32_handle {
                         let get_full_process_image_name = GetProcAddress(
                             k32_handle,
-                            windows::core::s!("QueryFullProcessImageNameW")
+                            windows::core::s!("QueryFullProcessImageNameW"),
                         );
-                        
+
                         if let Some(func_ptr) = get_full_process_image_name {
-                            type QueryFullProcessImageNameW = unsafe extern "system" fn(
-                                HANDLE,
-                                u32,
-                                *mut u16,
-                                *mut u32,
-                            ) -> BOOL;
-                            
-                            let func: QueryFullProcessImageNameW = 
-                                std::mem::transmute(func_ptr);
-                            
+                            type QueryFullProcessImageNameW =
+                                unsafe extern "system" fn(HANDLE, u32, *mut u16, *mut u32) -> BOOL;
+
+                            let func: QueryFullProcessImageNameW = std::mem::transmute(func_ptr);
+
                             let _ = func(handle, 0, buffer.as_mut_ptr(), &mut size);
                         }
                     }
-                    
+
                     let path = String::from_utf16_lossy(&buffer[..size as usize]);
                     let _ = CloseHandle(handle);
-                    
+
                     // UWP apps are typically in WindowsApps directory
                     Ok(path.contains("WindowsApps") || path.contains("AppPackages"))
                 } else {
@@ -322,7 +321,9 @@ impl Injector {
 
         // Check for UWP process
         if Self::detect_uwp_process(process_id)? {
-            return Err(InjectionError::UwpProcessNotSupported(process_name.to_string()));
+            return Err(InjectionError::UwpProcessNotSupported(
+                process_name.to_string(),
+            ));
         }
 
         // Open the target process with all access rights
@@ -532,7 +533,10 @@ mod tests {
         // This test verifies the function runs without panicking
         // The result depends on whether the test runner is elevated
         let elevated = is_elevated();
-        assert!(elevated == true || elevated == false, "is_elevated should return a boolean");
+        assert!(
+            elevated == true || elevated == false,
+            "is_elevated should return a boolean"
+        );
     }
 
     #[test]

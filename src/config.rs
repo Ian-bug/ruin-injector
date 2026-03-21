@@ -44,12 +44,12 @@ impl Config {
         }
 
         let config_str = serde_json::to_string_pretty(self)?;
-        
+
         // Atomic write: write to temp file, then rename
         let temp_path = config_path.with_extension("tmp");
         fs::write(&temp_path, config_str)?;
         fs::rename(&temp_path, &config_path)?;
-        
+
         Ok(())
     }
 
