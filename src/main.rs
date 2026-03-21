@@ -247,7 +247,7 @@ impl eframe::App for InjectorApp {
                     None => "No DLL selected".to_string(),
                 };
                 ui.add_enabled_ui(false, |ui| {
-                    ui.text_edit_singleline(&mut display_text.to_owned());
+                    ui.text_edit_singleline(&mut display_text.clone());
                 });
 
                 if ui.button("Browse").clicked() {
@@ -320,7 +320,6 @@ impl eframe::App for InjectorApp {
                     self.inject_dll();
                 }
 
-                let prev_auto = self.auto_inject;
                 if ui.checkbox(&mut self.auto_inject, "Auto-inject").changed() {
                     self.config.auto_inject = self.auto_inject;
                     self.config.save();
@@ -335,7 +334,7 @@ impl eframe::App for InjectorApp {
                     }
                 }
 
-                if self.auto_inject != prev_auto && self.auto_inject {
+                if self.auto_inject {
                     ui.label(egui::RichText::new("Active").color(egui::Color32::LIGHT_GREEN));
                 }
             });

@@ -209,7 +209,7 @@ impl Injector {
             ));
         }
 
-        let dll_path_str = dll_path.to_string_lossy().to_string();
+        let dll_path_str = dll_path.to_string_lossy();
         let dll_path_wide: Vec<u16> = dll_path_str
             .encode_utf16()
             .chain(std::iter::once(0))
@@ -277,13 +277,26 @@ impl Injector {
         };
 
         // Get the address of LoadLibraryW function in kernel32.dll
+        let kernel32_handle = unsafe { GetModuleHandleA(windows::core::s!("kernel32.dll")) };
+        let kernel32_handle = match kernel32_handle {
+            Ok(handle) => handle,
+            Err(_) => {
+                unsafe {
+                    let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
+                    let _ = CloseHandle(process_handle);
+                }
+                return Err(InjectionError::CreateRemoteThreadFailed(
+                    "Failed to get kernel32.dll module handle".to_string(),
+                ))
+            }
+        };
+
         let load_library_addr: *const c_void = unsafe {
-            match GetProcAddress(
-                GetModuleHandleA(windows::core::s!("kernel32.dll")).unwrap(),
-                windows::core::s!("LoadLibraryW"),
-            ) {
+            match GetProcAddress(kernel32_handle, windows::core::s!("LoadLibraryW")) {
                 Some(addr) => addr as *const c_void,
                 None => {
+                    let _ = VirtualFreeEx(process_handle, remote_buffer, 0, MEM_RELEASE);
+                    let _ = CloseHandle(process_handle);
                     return Err(InjectionError::CreateRemoteThreadFailed(
                         "Failed to find LoadLibraryW".to_string(),
                     ))

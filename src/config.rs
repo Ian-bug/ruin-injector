@@ -12,7 +12,7 @@ pub struct Config {
 impl Config {
     fn get_config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("rust_injector");
+        path.push("ruin-injector");
         path.push("config.json");
         path
     }
