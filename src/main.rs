@@ -129,8 +129,13 @@ impl Scale {
         Self {
             current: 0.0,
             target: 0.0,
-            speed: ANIMATION_FAST_SPEED,
+            speed: ANIMATION_DEFAULT_SPEED,
         }
+    }
+
+    fn with_speed(mut self, speed: f32) -> Self {
+        self.speed = speed;
+        self
     }
 
     fn set_target(&mut self, target: f32) {
@@ -265,7 +270,7 @@ impl ModalAnimation {
     fn new() -> Self {
         Self {
             fade: Fade::new().with_speed(ANIMATION_DEFAULT_SPEED),
-            scale: Scale::new(),
+            scale: Scale::new().with_speed(ANIMATION_DEFAULT_SPEED),
         }
     }
 
@@ -1262,9 +1267,11 @@ impl eframe::App for InjectorApp {
                     egui::Frame::default()
                         .multiply_with_opacity(modal_alpha)
                         .show(ui, |ui| {
+                            let padding = (1.0 - modal_scale) * MODAL_PADDING_SCALE;
+                            ui.add_space(padding);
+
                             ui.heading(
-                                egui::RichText::new("Running Processes")
-                                    .color(egui::Color32::WHITE),
+                                egui::RichText::new("Select Process").color(egui::Color32::WHITE),
                             );
                             ui.separator();
 
@@ -1311,6 +1318,8 @@ impl eframe::App for InjectorApp {
                                     self.search_query.clear();
                                 }
                             });
+
+                            ui.add_space(padding);
 
                             if let Some((name, pid)) = matched_process {
                                 self.process_name = name.clone();
