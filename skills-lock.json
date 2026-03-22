@@ -5,6 +5,11 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "computedHash": "67c6e536f306655d682651e68b9966c7c9a0a3f31ba8d8a3ce7e596d3b504e36"
+    },
+    "create-readme": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "d0ece1b2164ce1376e4ab6e98d6ac079df3a2a94f5f02224362b6a1ce2516ae9"
     }
   }
 }

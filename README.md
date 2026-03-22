@@ -1,165 +1,219 @@
-# Ruin DLL Injector
+<div align="center">
 
-A modern, lightweight DLL injector built with Rust and egui, designed for Windows applications. Inspired by [FateInjector](https://github.com/fligger/FateInjector).
+[**English**](README.md) | [**中文**](README_CN.md)
+
+# 🎯 Ruin DLL Injector
+
+**A modern, lightweight DLL injector built with Rust and egui**
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01WG0DL)
 
 ![Screenshot](screenshot.png)
 
-## Features
+</div>
 
-- **Modern GUI**: Clean, responsive interface built with egui with type-safe animations
-- **Advanced Animation System**: Custom Fade, Scale, Slide, and Pulse animation types with Animatable trait
-- **Process Browser**: Visual selection from running processes with search functionality
-- **Auto Configuration**: Atomic config writes prevent corruption (temp file + rename pattern)
-- **Auto Inject**: Automatically inject when target process is detected
-- **Injection History**: Tracks last 10 injections with timestamps
-- **Real-time Logging**: Monitor injection status with animated log entries
-- **UWP Protection**: Detects and blocks injection into UWP apps (WindowsApps/AppPackages)
-- **No Console**: Pure GUI application - no black terminal windows
-- **Lightweight**: ~4.5 MB executable with minimal dependencies
-- **Robust Error Handling**: Comprehensive error types with actionable messages
-- **Architecture Detection**: Prevents 32-bit/64-bit mismatch errors
-- **Admin Status**: Real-time administrator privilege indicator with pulse animation
+---
 
-## System Requirements
+## ✨ Overview
 
-- Windows 10/11 (64-bit)
-- Administrator privileges (required for some processes, not all)
-- The DLL file you want to inject
+Ruin Injector is a powerful yet user-friendly DLL injector for Windows applications. Built with Rust's memory safety guarantees and egui's modern GUI framework, it provides a clean interface with advanced features like auto-injection, process filtering, and real-time logging.
 
-## Quick Start
+**Inspired by [FateInjector](https://github.com/fligger/FateInjector)**
 
-### Building
+---
+
+## 🚀 Quick Start
+
+### Build from Source
 
 ```bash
+git clone https://github.com/Ian-bug/ruin-injector.git
+cd ruin-injector
 cargo build --release
 ```
 
 The compiled executable will be at `target/release/ruin-injector.exe`.
 
-### Adding an Icon
+### Download Release
 
-Place your `.ico` file as `icon.ico` in the project root directory and rebuild. See [ICON.md](ICON.md) for detailed instructions.
+Get the latest pre-built binary from the [Releases](https://github.com/Ian-bug/ruin-injector/releases) page.
 
-## Usage
+---
 
-1. **Run Application**
-    ```bash
-    .\ruin-injector.exe
-    ```
-    (Right-click -> "Run as administrator" for maximum compatibility)
+## 📋 System Requirements
 
-2. **Select DLL File**
-    - Click "Browse" button
-    - Navigate to and select your DLL file
+- **OS**: Windows 10/11 (64-bit)
+- **Privileges**: Administrator (recommended, but not always required)
+- **Target**: DLL file to inject
+
+---
+
+## 🎮 Usage Guide
+
+### Basic Injection
+
+1. **Launch the Application**
+   ```bash
+   .\ruin-injector.exe
+   ```
+   *Right-click → "Run as administrator" for maximum compatibility*
+
+2. **Select Your DLL**
+   - Click the **Browse** button
+   - Navigate to your DLL file
+   - Select and confirm
 
 3. **Choose Target Process**
-    - Click "List" button
-    - Use search box to filter processes
-    - Click on desired process
+   - Click the **List** button
+   - Search or browse running processes
+   - Click to select your target
 
 4. **Inject**
-    - Click "Inject DLL" button
-    - Monitor log section for success/error messages
+   - Click **Inject DLL**
+   - Monitor the log for status
 
-### Features in Detail
+### Auto-Injection Mode
 
-#### Process Selection
-- **Live Process List**: Shows all currently running processes
-- **Search/Filter**: Type to quickly find specific processes
-- **Process Info**: Displays process name and PID (Process ID)
-- **UWP Detection**: Automatically identifies and warns about UWP applications
-- **Animated Window**: Process list opens with smooth scale animation
+Enable automatic injection when your target process starts:
 
-#### Injection Options
-- **Auto Inject**: Automatically inject when target process is detected
-  - Enable via checkbox in UI
-  - Settings persist across sessions (atomic writes)
-  - Detects process start and injects automatically
-  - Shows "Active" indicator with pulse animation
-- **Manual Inject**: Click Inject button for immediate injection
-- **Architecture Validation**: Ensures injector and target process bitness match
+- ☑️ Check the **Auto Inject** box
+- Select your DLL file
+- Choose your target process
+- Ruin Injector will automatically inject when the process appears
+- Settings persist between sessions
 
-#### Visual Enhancements
-- **Type-Safe Animations**: Fade, Scale, Slide, Pulse structs with Animatable trait
-- **Fade-in Animation**: Title fades in smoothly on startup
-- **Slide Animation**: Content slides in from below
-- **Log Animation**: New log entries fade in as they're added
-- **Window Scaling**: Process selector window scales in/out smoothly
-- **Modal Blur**: Blurred background overlay for dialogs
+### Advanced Features
+
+<details>
+<summary>📊 Process Browser</summary>
+
+- **Live Process List**: Real-time enumeration of all running processes
+- **Search Filter**: Instant filtering by process name
+- **Process Details**: Shows PID (Process ID) and name
+- **UWP Detection**: Automatically flags Universal Windows Platform apps
+- **Animated UI**: Smooth window transitions
+</details>
+
+<details>
+<summary>🎨 Visual Enhancements</summary>
+
+- **Type-Safe Animation System**: Custom Fade, Scale, Slide, and Pulse animations
+- **Smooth Transitions**: Fade-in titles, sliding content, scaling dialogs
+- **Log Animations**: New entries fade in smoothly
 - **Status Indicators**: Animated pulses for admin/auto-inject status
+- **Modal Blur**: Blurred background overlays for dialogs
+</details>
 
-#### Error Handling
-- **Detailed Messages**: Contextual error descriptions with suggestions
+<details>
+<summary>⚡ Injection Options</summary>
+
+- **Manual Inject**: Immediate injection on button click
+- **Auto Inject**: Automatic detection and injection
+- **Architecture Validation**: Ensures 32-bit/64-bit compatibility
+- **UWP Protection**: Prevents injection into protected apps
+</details>
+
+<details>
+<summary>🔧 Error Handling</summary>
+
+- **Detailed Messages**: Contextual descriptions with actionable advice
 - **Architecture Mismatch**: Clear explanation of bitness issues
-- **UWP Process**: Informative warning about unsupported apps
-- **Actionable Advice**: "Try running as Administrator" when applicable
-- **DLL Load Failures**: Detailed causes (missing deps, anti-cheat, etc.)
+- **UWP Warnings**: Informative alerts for unsupported apps
+- **Permission Guidance**: "Try running as Administrator" hints
+- **DLL Diagnostics**: Detailed failure causes (deps, anti-cheat, etc.)
+</details>
 
-## Architecture
+---
+
+## 🏗️ Architecture
+
+### Project Structure
 
 ```
-rust-injector/
+ruin-injector/
 ├── src/
-│   ├── main.rs          # Entry, egui UI, animation system, state management
-│   ├── injector.rs      # Core injection, Windows API, UWP detection, architecture checks
-│   └── config.rs       # Config persistence with atomic writes
-├── Cargo.toml           # Project dependencies and metadata
-├── build.rs             # Windows resource compilation (icon embedding)
-├── icon.ico             # Application icon (optional, auto-embedded)
-├── cliff.toml           # Changelog generation configuration
-├── README.md            # This file
-├── README_CN.md        # Chinese documentation
-├── ICON.md             # Icon usage instructions
-└── AGENTS.md           # Guidelines for AI coding assistants
+│   ├── main.rs       # Entry point, egui UI, animation system
+│   ├── injector.rs  # Core injection logic, Windows API
+│   └── config.rs    # Configuration persistence
+├── Cargo.toml        # Dependencies and metadata
+├── build.rs          # Resource compilation (icon embedding)
+├── icon.ico          # Application icon
+├── cliff.toml        # Changelog configuration
+├── AGENTS.md         # AI assistant guidelines
+├── ICON.md           # Icon usage instructions
+├── README.md         # This file
+└── README_CN.md      # Chinese documentation
 ```
 
-## Technical Implementation
+### Technology Stack
 
-### DLL Injection Process
+| Component | Technology |
+|-----------|-----------|
+| **Language** | Rust 2021 |
+| **GUI Framework** | egui 0.27 |
+| **Windows API** | windows-rs 0.54 |
+| **File Dialog** | rfd 0.14 |
+| **Serialization** | serde + serde_json |
+| **Config Paths** | dirs 5.0 |
+| **Timestamps** | chrono 0.4 |
+
+---
+
+## 🔬 Technical Implementation
+
+### DLL Injection Workflow
+
+```mermaid
+graph LR
+    A[Process Discovery] --> B[UWP Detection]
+    B --> C[Architecture Check]
+    C --> D[Open Process]
+    D --> E[Allocate Memory]
+    E --> F[Write DLL Path]
+    F --> G[Create Remote Thread]
+    G --> H[Wait for Completion]
+    H --> I[Cleanup]
+```
+
+#### Step-by-Step
 
 1. **Process Discovery**
-   - Uses `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` to enumerate processes
-   - Iterates with `Process32First` and `Process32Next`
+   - `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` enumeration
+   - Iterate with `Process32First`/`Process32Next`
 
-2. **UWP Detection** (NEW)
-   - Checks process path for WindowsApps/AppPackages directories
-   - Uses `QueryFullProcessImageNameW` for accurate paths (Windows 8.1+)
-   - Returns `UwpProcessNotSupported` error for UWP apps
-   - Provides actionable warning message
+2. **UWP Detection**
+   - Check for WindowsApps/AppPackages directories
+   - `QueryFullProcessImageNameW` for accurate paths
+   - Return `UwpProcessNotSupported` error
 
-3. **Architecture Compatibility**
-   - Checks injector bitness (32/64) via `cfg(target_pointer_width)`
-   - Detects target process architecture using `IsWow64Process`
-   - Prevents mismatched injections with clear error messages
+3. **Architecture Validation**
+   - Injector bitness via `cfg(target_pointer_width)`
+   - Target architecture via `IsWow64Process`
+   - Prevent mismatched injections
 
 4. **Process Access**
-   - Opens target process with `OpenProcess(PROCESS_ALL_ACCESS, ...)`
-   - Handles Windows permission models
-   - Injection will fail gracefully if insufficient permissions
+   - `OpenProcess(PROCESS_ALL_ACCESS, ...)`
+   - Handle Windows permission model
+   - Graceful failure on insufficient permissions
 
 5. **Memory Allocation**
-   - Allocates memory in target process via `VirtualAllocEx(...)`
-   - Sets memory protection to `PAGE_READWRITE`
+   - `VirtualAllocEx(...)` for target memory
+   - `PAGE_READWRITE` protection
 
 6. **DLL Path Injection**
-   - Writes DLL path string to allocated memory using `WriteProcessMemory(...)`
-   - Converts path to UTF-16 wide string format
-   - Validates path length (MAX_PATH_LENGTH = 260)
+   - `WriteProcessMemory(...)` for UTF-16 path
+   - Validate path length (MAX_PATH_LENGTH = 260)
 
 7. **Remote Thread Creation**
-   - Creates a thread in target process via `CreateRemoteThread(...)`
-   - Thread entry point is `LoadLibraryW` (obtained via `GetProcAddress`)
-   - Waits for completion with 10-second timeout
+   - `CreateRemoteThread(...)` with `LoadLibraryW` entry point
+   - 10-second timeout for completion
 
 8. **Cleanup**
-   - Waits for thread completion with `WaitForSingleObject(...)`
-   - Checks thread exit code (NULL indicates LoadLibraryW failed)
-   - Frees allocated memory with `VirtualFreeEx(...)`
-   - Closes all handles properly
+   - `WaitForSingleObject(...)` for thread completion
+   - Check exit code (NULL = LoadLibraryW failed)
+   - `VirtualFreeEx(...)` and `CloseHandle(...)` for resources
 
-### Core Windows APIs Used
+### Core Windows APIs
 
 | API | Purpose |
 |-----|---------|
@@ -180,9 +234,8 @@ rust-injector/
 
 ### Animation System
 
-The application uses a type-safe, modular animation system:
+A type-safe, modular animation architecture:
 
-**Animation Types**:
 ```rust
 trait Animatable {
     fn update(&mut self, dt: f32);
@@ -193,26 +246,23 @@ struct Fade { current: f32, target: f32, speed: f32 }
 struct Scale { current: f32, target: f32, speed: f32 }
 struct Slide { current: f32, target: f32, speed: f32 }
 struct Pulse { phase: f32, speed: f32, amplitude: f32, base: f32 }
-struct ModalAnimation { fade: Fade, scale: Scale }
 ```
 
-**Usage**:
-- **Fade Animation**: Alpha value interpolation for UI elements
-- **Slide Animation**: Y-offset interpolation for panel movement
-- **Scale Animation**: Window scale interpolation for dialogs
-- **Pulse Animation**: Continuous phase rotation for status indicators
-- **Log Alpha**: Per-log entry transparency for smooth fade-in
+**Animation Types**:
+- **Fade**: Alpha value interpolation for transparency
+- **Scale**: Window size interpolation for dialogs
+- **Slide**: Y-offset interpolation for panel movement
+- **Pulse**: Continuous phase rotation for status indicators
 
-**Animation Constants**:
+**Key Constants**:
 ```rust
 const ANIMATION_DEFAULT_SPEED: f32 = 0.12;
 const ANIMATION_FAST_SPEED: f32 = 0.2;
 const PULSE_SPEED_DEFAULT: f32 = 0.03;
 const ALPHA_THRESHOLD: f32 = 0.01;
-const SCALE_THRESHOLD: f32 = 0.01;
 ```
 
-### Configuration Management (UPDATED)
+### Configuration Management
 
 **Atomic Write Pattern**:
 ```rust
@@ -225,13 +275,11 @@ fs::rename(&temp_path, &config_path)?;
 ```
 
 **Benefits**:
-- Prevents config corruption on crash/power loss
+- Prevents corruption on crash/power loss
 - Thread-safe configuration updates
 - Graceful fallback on first run
 
 ### Error Handling
-
-All operations include comprehensive error handling:
 
 ```rust
 pub enum InjectionError {
@@ -245,17 +293,13 @@ pub enum InjectionError {
     PathTooLong(String),
     DllLoadFailed(String),
     ThreadWaitFailed(String),
-    UwpProcessNotSupported(String),  // NEW
+    UwpProcessNotSupported(String),
 }
 ```
 
-**Error Display**:
-- Errors are displayed in UI log with descriptive context
-- Color-coded (red for errors, green for success)
-- Actionable suggestions (e.g., "Try running as Administrator")
-- Detailed causes for DLL load failures
+---
 
-## Development
+## 🛠️ Development
 
 ### Build Commands
 
@@ -266,40 +310,34 @@ cargo build --release
 # Development build (faster)
 cargo build
 
-# Clean and rebuild
+# Clean + rebuild
 cargo clean && cargo build --release
 
 # Fast compile check
 cargo check
 ```
 
-### Linting and Formatting
+### Code Quality
 
 ```bash
-# Run clippy linter
+# Run linter
 cargo clippy
 
-# Format code with rustfmt
+# Format code
 cargo fmt
 
-# Check formatting without changes
+# Check formatting
 cargo fmt --check
-```
 
-### Testing
-
-```bash
-# Run all tests
+# Run tests
 cargo test
 
-# Run tests with output
+# Tests with output
 cargo test -- --nocapture
-
-# Run specific test
-cargo test test_name
 ```
 
-**Test Coverage** (v1.3.0):
+### Test Coverage (v1.3.1)
+
 - 21 comprehensive unit and integration tests
 - Process enumeration
 - Input validation
@@ -310,7 +348,19 @@ cargo test test_name
 - Modal animation tests
 - Button hover animations
 
-### For AI Agents
+### Code Quality Standards
+
+✅ Zero compiler warnings
+✅ Zero clippy warnings
+✅ Full rustfmt compliance
+✅ All 21 tests passing
+✅ Proper error handling and resource cleanup
+✅ Named constants (no magic numbers)
+✅ Type-safe animation system with traits
+✅ Atomic config writes for data integrity
+✅ RAII patterns for resource management
+
+### For AI Assistants
 
 See [AGENTS.md](AGENTS.md) for detailed guidelines on:
 - Code style conventions
@@ -320,118 +370,126 @@ See [AGENTS.md](AGENTS.md) for detailed guidelines on:
 - Testing strategies
 - Animation system architecture
 
-### Recent Improvements (v1.3.0)
+---
 
-Major updates to codebase:
+## 📈 What's New (v1.3.1)
 
-1. **Animation System Redesign**: Complete rewrite with type-safe architecture
-   - Animatable trait for unified interface
+### Recent Improvements
+
+1. **Animation System Redesign**
+   - Type-safe architecture with `Animatable` trait
    - Fade, Scale, Slide, Pulse animation types
-   - Removed raw f32 fields from AnimationState
-   - Builder pattern for configuration (with_speed, with_easing)
-   - Zero magic numbers throughout
+   - Builder pattern for configuration
+   - Zero magic numbers
 
-2. **UWP Process Detection**: Prevents injection into Universal Windows Platform apps
-   - Checks for WindowsApps/AppPackages directories
-   - UwpProcessNotSupported error with warning message
-   - QueryFullProcessImageNameW for accurate paths
+2. **UWP Process Detection**
+   - Checks WindowsApps/AppPackages directories
+   - `UwpProcessNotSupported` error with warnings
+   - Accurate path resolution
 
-3. **Atomic Config Writes**: Prevents configuration file corruption
+3. **Atomic Config Writes**
    - Temp file + rename pattern
    - Thread-safe updates
    - Graceful fallback handling
 
-4. **Enhanced Error Messages**: Detailed, actionable error descriptions
-   - Architecture mismatch detection and explanation
-   - DLL load failure causes (dependencies, anti-cheat, etc.)
-   - "Try running as Administrator" suggestions
+4. **Enhanced Error Messages**
+   - Architecture mismatch detection
+   - DLL load failure diagnostics
+   - Actionable suggestions
 
-5. **Code Quality**: Production-ready codebase
-   - Zero compiler warnings
-   - Zero clippy warnings
-   - Full rustfmt compliance
-   - All 21 tests passing
+5. **Production-Ready Codebase**
+   - Zero warnings across all tools
+   - Comprehensive test coverage
+   - Clean, maintainable architecture
 
-6. **Modal Animations Fixed**: Consistent scale + fade behavior
-   - Window background now fades properly
-   - Both modals use same animation pattern
+6. **Modal Animations**
+   - Consistent scale + fade behavior
+   - Window background fading
+   - Unified animation patterns
 
-## Important Notes
+---
+
+## ⚠️ Important Notes
 
 ### Security Considerations
 
-- **Antivirus Detection**: DLL injection is a common technique monitored by antivirus software
-- **Permission Model**: Injection works with current permissions - some processes may require administrator access
-- **Process Protection**: System-protected processes cannot be injected
-- **UWP Apps**: Universal Windows Platform applications have restricted injection capabilities
-- **Architecture Matching**: Injector and target process must match (32-bit or 64-bit)
+- **Antivirus Monitoring**: DLL injection is monitored by antivirus software
+- **Permission Model**: Works with current privileges; admin may be needed
+- **Protected Processes**: System processes cannot be injected
+- **UWP Apps**: Restricted injection capabilities by design
+- **Architecture**: Must match (32-bit ↔ 32-bit, 64-bit ↔ 64-bit)
 
 ### Best Practices
 
-- **Backup DLLs**: Keep backups of original DLLs when modifying
-- **Test in Safe Environment**: First test injection on non-critical applications
-- **Monitor Logs**: Always check log output for errors or warnings
-- **Close Handles**: All Windows handles are properly closed to prevent leaks
-- **Check Architecture**: Ensure your DLL matches target process bitness
-- **Avoid UWP**: Don't attempt to inject into UWP applications
+- 🔒 Test in safe environment first
+- 💾 Backup original DLLs
+- 📊 Monitor log output
+- 🎯 Verify architecture matching
+- 🚫 Avoid UWP applications
+- 👤 Only inject processes you own
 
 ### Limitations
 
-- **Process Protection**: System-protected processes (e.g., `csrss.exe`, `lsass.exe`) cannot be injected
-- **Antivirus Interference**: Real-time protection may block injection attempts
-- **Permission Dependent**: Some processes may require administrator access for successful injection
-- **UWP Applications**: UWP apps cannot be injected (intentionally blocked)
-- **Architecture Mismatch**: 32-bit injector cannot inject 64-bit processes (and vice versa)
+- System-protected processes (`csrss.exe`, `lsass.exe`) cannot be injected
+- Real-time antivirus protection may block attempts
+- Some processes require administrator access
+- UWP apps are intentionally blocked
+- Architecture mismatch prevents injection
 
-## License
+---
+
+## 📄 License
 
 This project is provided **as-is** for **educational and development purposes only**.
 
 ### Usage Guidelines
 
-- Only inject DLLs into processes you own or have explicit permission to modify
-- This tool should not be used for malicious purposes
-- Users are responsible for complying with applicable laws and regulations
-- The authors are not responsible for any misuse of this software
+- Only inject DLLs into processes you own or have permission to modify
+- Do not use for malicious purposes
+- Comply with applicable laws and regulations
+- Authors are not responsible for misuse
 
-## Acknowledgments
+---
+
+## 🙏 Acknowledgments
 
 - **Inspired by**: [FateInjector](https://github.com/fligger/FateInjector) - Original C++ implementation
-- **Dependencies**: [egui](https://github.com/emilk/egui), [windows-rs](https://github.com/microsoft/windows-rs), [rfd](https://github.com/PolyMeow/rfd), [serde](https://github.com/serde-rs/serde), [serde_json](https://github.com/serde-rs/json), [dirs](https://github.com/dirs-dev/dirs-rs), [winres](https://github.com/mxre/winres), [chrono](https://github.com/chronotope/chrono), [git-cliff](https://github.com/orhun/git-cliff)
+- **Dependencies**:
+  - [egui](https://github.com/emilk/egui) - GUI framework
+  - [windows-rs](https://github.com/microsoft/windows-rs) - Windows API bindings
+  - [rfd](https://github.com/PolyMeow/rfd) - File dialogs
+  - [serde](https://github.com/serde-rs/serde) - Serialization
+  - [dirs](https://github.com/dirs-dev/dirs-rs) - Config paths
+  - [winres](https://github.com/mxre/winres) - Windows resources
+  - [chrono](https://github.com/chronotope/chrono) - Timestamps
+  - [git-cliff](https://github.com/orhun/git-cliff) - Changelog generation
 
-## Contributing
+---
+
+## 🤝 Contributing
 
 Contributions are welcome! Please feel free to:
-- Report bugs via issues
-- Suggest new features
-- Submit pull requests
-- Improve documentation
+
+- 🐛 Report bugs via issues
+- 💡 Suggest new features
+- 📝 Submit pull requests
+- 📚 Improve documentation
 
 When contributing, please follow guidelines in [AGENTS.md](AGENTS.md).
 
-## Links
+---
+
+## 🔗 Links
 
 - [GitHub Repository](https://github.com/Ian-bug/ruin-injector)
 - [Issue Tracker](https://github.com/Ian-bug/ruin-injector/issues)
 - [Release Notes](https://github.com/Ian-bug/ruin-injector/releases)
-
-## Code Quality
-
-This project has undergone comprehensive code review and quality improvements:
-
-- All code passes `cargo clippy` linting (zero warnings)
-- All code passes `cargo fmt` formatting (zero warnings)
-- Comprehensive test coverage (21 tests, all passing)
-- Proper error handling and resource cleanup
-- Named constants replacing magic numbers
-- Type-safe animation system with trait abstractions
-- Auto-inject functionality implemented
-- Atomic config writes for data integrity
-- UWP process detection for safety
-- Architecture validation to prevent mismatched injections
-- RAII patterns for resource management
-- Well-documented codebase with AGENTS.md guidelines
+- [中文文档](README_CN.md)
 
 ---
 
-**Made with Rust** 🦀
+<div align="center">
+
+**Built with ❤️ using Rust** 🦀
+
+</div>
