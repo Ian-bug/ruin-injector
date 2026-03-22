@@ -2,6 +2,8 @@
 
 基于 Rust 和 egui 构建的现代化轻量级 DLL 注入器，专为 Windows 应用程序设计。受 [FateInjector](https://github.com/fligger/FateInjector) 启发。
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01WG0DL)
+
 ![截图](screenshot.png)
 
 ## 功能特性
