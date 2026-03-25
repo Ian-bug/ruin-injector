@@ -3,7 +3,7 @@ fn main() {
     {
         let mut res = winres::WindowsResource::new();
 
-        // 设置 icon（如果存在）
+        // Set icon (if exists)
         if std::path::Path::new("icon.ico").exists() {
             res.set_icon("icon.ico");
             println!("Icon set: icon.ico");
@@ -11,7 +11,7 @@ fn main() {
             println!("No icon.ico found, skipping...");
         }
 
-        // 设置版本信息
+        // Set version information
         res.set_version_info(winres::VersionInfo::PRODUCTVERSION, 1);
 
         if let Err(e) = res.compile() {

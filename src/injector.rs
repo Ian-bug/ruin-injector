@@ -8,9 +8,12 @@ use windows::Win32::System::LibraryLoader::*;
 use windows::Win32::System::Memory::*;
 use windows::Win32::System::Threading::*;
 
-const MAX_PROCESS_NAME_LENGTH: usize = 260;
+/// Maximum length for process names (Windows limitation)
+pub const MAX_PROCESS_NAME_LENGTH: usize = 260;
 const MAX_PATH_LENGTH: usize = 260;
+const INJECTION_TIMEOUT_MS: u32 = 10000;
 
+/// Check if the current process has administrator privileges
 pub fn is_elevated() -> bool {
     unsafe {
         let mut token_handle = HANDLE::default();
@@ -32,6 +35,7 @@ pub fn is_elevated() -> bool {
     }
 }
 
+/// Process information structure
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub name: String,
@@ -99,13 +103,16 @@ impl std::fmt::Display for InjectionError {
 
 impl std::error::Error for InjectionError {}
 
+/// DLL injector structure
 pub struct Injector;
 
 impl Injector {
+    /// Create a new Injector instance
     pub fn new() -> Self {
         Injector
     }
 
+    /// Get list of all running processes on the system
     pub fn get_all_processes(&self) -> Vec<ProcessInfo> {
         let mut processes = Vec::new();
 
@@ -231,15 +238,20 @@ impl Injector {
     fn detect_uwp_process(pid: u32) -> Result<bool, InjectionError> {
         unsafe {
             let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if let Ok(handle) = process_handle {
-                if !handle.is_invalid() {
+            match process_handle {
+                Ok(handle) => {
+                    if handle.is_invalid() {
+                        let _ = CloseHandle(handle);
+                        return Ok(false);
+                    }
+
                     // Use QueryFullProcessImageNameW if available (Windows 8.1+)
                     let mut buffer: [u16; MAX_PATH_LENGTH] = [0; MAX_PATH_LENGTH];
                     let mut size = buffer.len() as u32;
 
                     // Get function address dynamically
                     let k32_handle = GetModuleHandleA(windows::core::s!("kernel32.dll"));
-                    if let Ok(k32_handle) = k32_handle {
+                    let success = if let Ok(k32_handle) = k32_handle {
                         let get_full_process_image_name = GetProcAddress(
                             k32_handle,
                             windows::core::s!("QueryFullProcessImageNameW"),
@@ -250,25 +262,34 @@ impl Injector {
                                 unsafe extern "system" fn(HANDLE, u32, *mut u16, *mut u32) -> BOOL;
 
                             let func: QueryFullProcessImageNameW = std::mem::transmute(func_ptr);
-
-                            let _ = func(handle, 0, buffer.as_mut_ptr(), &mut size);
+                            func(handle, 0, buffer.as_mut_ptr(), &mut size).as_bool()
+                        } else {
+                            false
                         }
-                    }
+                    } else {
+                        false
+                    };
 
                     let path = String::from_utf16_lossy(&buffer[..size as usize]);
                     let _ = CloseHandle(handle);
 
                     // UWP apps are typically in WindowsApps directory
-                    Ok(path.contains("WindowsApps") || path.contains("AppPackages"))
-                } else {
-                    Ok(false)
+                    Ok(success && (path.contains("WindowsApps") || path.contains("AppPackages")))
                 }
-            } else {
-                Ok(false)
+                Err(_) => Ok(false),
             }
         }
     }
 
+    /// Inject a DLL into a target process by name
+    ///
+    /// # Arguments
+    /// * `process_name` - Name of the target process (e.g., "notepad.exe")
+    /// * `dll_path` - Path to the DLL file to inject
+    ///
+    /// # Returns
+    /// * `Ok(())` if injection succeeded
+    /// * `Err(InjectionError)` if injection failed
     pub fn inject(&self, process_name: &str, dll_path: &Path) -> Result<(), InjectionError> {
         if process_name.is_empty() {
             return Err(InjectionError::InvalidProcessName(
@@ -464,7 +485,6 @@ impl Injector {
         };
 
         // Wait for the remote thread to complete with timeout (10 seconds for larger DLLs)
-        const INJECTION_TIMEOUT_MS: u32 = 10000;
         let injection_result = unsafe {
             let wait_result = WaitForSingleObject(thread_handle, INJECTION_TIMEOUT_MS);
 
@@ -636,5 +656,31 @@ mod tests {
 
         assert_eq!(process.name, cloned.name);
         assert_eq!(process.pid, cloned.pid);
+    }
+
+    #[test]
+    fn test_dll_path_validation() {
+        let injector = Injector::new();
+        // Test non-existent path
+        let result = injector.inject("notepad.exe", Path::new("/nonexistent/path/test.dll"));
+        assert!(result.is_err());
+
+        // Test non-DLL extension
+        let result = injector.inject("notepad.exe", Path::new("test.exe"));
+        assert!(result.is_err());
+
+        // Test path too long
+        let long_path = "a".repeat(300);
+        let temp_path = Path::new(&long_path);
+        let result = injector.inject("notepad.exe", temp_path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_max_process_name_length() {
+        let injector = Injector::new();
+        let long_name = "a".repeat(300);
+        let result = injector.inject(&long_name, Path::new("test.dll"));
+        assert!(result.is_err());
     }
 }

@@ -2,7 +2,7 @@
 
 use config::Config;
 use eframe::egui;
-use injector::{is_elevated, Injector};
+use injector::{is_elevated, Injector, MAX_PROCESS_NAME_LENGTH};
 use std::path::PathBuf;
 
 // Animation constants (simplified)
@@ -24,7 +24,6 @@ const FLASH_ALPHA_START: f32 = 0.5;
 // UI bounds
 const MAX_LOGS: usize = 1000;
 const MAX_INJECTION_HISTORY: usize = 10;
-const MAX_PROCESS_NAME_LENGTH: usize = 260;
 const PROCESS_LIST_SCROLL_HEIGHT: f32 = 400.0;
 const LOG_SCROLL_HEIGHT: f32 = 250.0;
 const WINDOW_WIDTH: f32 = 700.0;
@@ -41,9 +40,25 @@ const FONT_SIZE_SMALL: f32 = 12.0;
 // Thresholds
 const ALPHA_THRESHOLD: f32 = 0.01;
 const SCALE_THRESHOLD: f32 = 0.01;
+const AUTO_INJECT_COOLDOWN_MS: u128 = 5000; // 5 seconds between attempts
 
 mod config;
 mod injector;
+
+/// Linear interpolation between two values
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// Linear interpolation between two colors
+fn lerp_color(c1: egui::Color32, c2: egui::Color32, t: f32) -> egui::Color32 {
+    egui::Color32::from_rgba_premultiplied(
+        (lerp(c1.r() as f32, c2.r() as f32, t)) as u8,
+        (lerp(c1.g() as f32, c2.g() as f32, t)) as u8,
+        (lerp(c1.b() as f32, c2.b() as f32, t)) as u8,
+        (lerp(c1.a() as f32, c2.a() as f32, t)) as u8,
+    )
+}
 
 // ============= Animation System =============
 
@@ -362,7 +377,9 @@ impl LogManager {
     }
 
     fn add_log(&mut self, message: String) {
-        let is_error = message.to_lowercase().contains("error");
+        let is_error = message.to_lowercase().contains("error")
+            || message.to_lowercase().contains("failed")
+            || message.to_lowercase().contains("failed:");
         self.entries.push(LogEntry::new(message, is_error));
 
         // Mark oldest entries for removal when exceeding max
@@ -537,11 +554,9 @@ impl AnimationState {
             self.history_fades.push(Fade::new());
         }
 
-        for (i, fade) in self.history_fades.iter_mut().enumerate() {
+        for fade in self.history_fades.iter_mut() {
             fade.set_target(1.0);
-            // Stagger with index
-            let dt = 1.0 - (i as f32 * 0.1).max(0.5);
-            fade.update(dt);
+            fade.update(1.0);
         }
     }
 
@@ -576,6 +591,7 @@ struct InjectorApp {
     show_confirm_dialog: bool,
     frame_counter: i32,
     animation: AnimationState,
+    last_auto_inject_attempt: Option<std::time::Instant>,
 }
 
 impl Default for InjectorApp {
@@ -599,6 +615,7 @@ impl Default for InjectorApp {
             show_confirm_dialog: false,
             frame_counter: 0,
             animation: AnimationState::default(),
+            last_auto_inject_attempt: None,
         }
     }
 }
@@ -634,14 +651,13 @@ impl InjectorApp {
             }
         };
 
-        let proc_name = self.process_name.clone();
-        if proc_name.is_empty() {
+        if self.process_name.is_empty() {
             self.add_log("Error: No process name specified".to_string());
             self.animation.trigger_flash(false);
             return;
         }
 
-        if proc_name.len() > MAX_PROCESS_NAME_LENGTH {
+        if self.process_name.len() > MAX_PROCESS_NAME_LENGTH {
             self.add_log(format!(
                 "Error: Process name too long (max {} characters)",
                 MAX_PROCESS_NAME_LENGTH
@@ -651,15 +667,18 @@ impl InjectorApp {
         }
 
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
-        self.add_log(format!("Attempting to inject into {}...", proc_name));
+        self.add_log(format!(
+            "Attempting to inject into {}...",
+            self.process_name
+        ));
 
-        match self.injector.inject(&proc_name, &dll_path) {
+        match self.injector.inject(&self.process_name, &dll_path) {
             Ok(_) => {
                 self.add_log("Injection successful!".to_string());
                 self.animation.trigger_flash(true);
                 self.auto_injected = true;
                 self.last_process_was_running = true;
-                self.config.last_process = Some(proc_name.clone());
+                self.config.last_process = Some(self.process_name.clone());
                 if let Some(err) = self.config.save_with_error_message() {
                     self.add_log(err);
                 }
@@ -667,8 +686,10 @@ impl InjectorApp {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown.dll");
-                self.injection_history
-                    .insert(0, format!("[{}] {} -> {}", timestamp, proc_name, dll_name));
+                self.injection_history.insert(
+                    0,
+                    format!("[{}] {} -> {}", timestamp, self.process_name, dll_name),
+                );
                 if self.injection_history.len() > MAX_INJECTION_HISTORY {
                     self.injection_history.pop();
                 }
@@ -686,6 +707,7 @@ impl InjectorApp {
 
         if self.last_process_was_running && !is_running {
             self.auto_injected = false;
+            self.last_auto_inject_attempt = None;
         }
         self.last_process_was_running = is_running;
 
@@ -695,7 +717,15 @@ impl InjectorApp {
             && is_running
             && self.dll_path.is_some()
         {
+            // Check cooldown to prevent spam
+            if let Some(last_attempt) = self.last_auto_inject_attempt {
+                if last_attempt.elapsed().as_millis() < AUTO_INJECT_COOLDOWN_MS {
+                    return;
+                }
+            }
+
             self.add_log("Auto-inject: Target process detected, injecting...".to_string());
+            self.last_auto_inject_attempt = Some(std::time::Instant::now());
             self.inject_dll();
         }
     }
@@ -779,12 +809,7 @@ impl eframe::App for InjectorApp {
                 // Admin status with pulse animation
                 let admin_pulse = self.animation.status_pulse.get();
                 let admin_color = if is_elevated() {
-                    let base = egui::Color32::LIGHT_GREEN;
-                    egui::Color32::from_rgb(
-                        (base.r() as f32 * admin_pulse) as u8,
-                        (base.g() as f32 * admin_pulse) as u8,
-                        base.b(),
-                    )
+                    lerp_color(egui::Color32::GRAY, egui::Color32::LIGHT_GREEN, admin_pulse)
                 } else {
                     egui::Color32::LIGHT_RED
                 };
@@ -902,6 +927,15 @@ impl eframe::App for InjectorApp {
 
             ui.horizontal(|ui| {
                 let mut process_name_validated = self.process_name.clone();
+                // Sanitize: remove invalid characters and trim
+                process_name_validated = process_name_validated
+                    .chars()
+                    .filter(|c| {
+                        c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '.' || *c == ' '
+                    })
+                    .collect();
+                process_name_validated = process_name_validated.trim().to_string();
+
                 if process_name_validated.len() > MAX_PROCESS_NAME_LENGTH {
                     process_name_validated.truncate(MAX_PROCESS_NAME_LENGTH);
                 }
@@ -977,13 +1011,6 @@ impl eframe::App for InjectorApp {
             ui.add_space(20.0);
 
             // Section 3: Injection controls
-            let _section_alpha = self
-                .animation
-                .section_fades
-                .get(2)
-                .map(|f| f.get())
-                .unwrap_or(1.0);
-
             ui.horizontal(|ui| {
                 // Inject button with hover glow effect
                 let inject_btn = egui::Button::new(
@@ -999,17 +1026,6 @@ impl eframe::App for InjectorApp {
                 }
 
                 // Auto-inject checkbox
-                let _checkbox_color = if self.auto_inject {
-                    let pulse = self.animation.auto_inject_pulse.get();
-                    egui::Color32::from_rgb(
-                        (144.0 * pulse) as u8,
-                        (238.0 * pulse) as u8,
-                        (144.0 * pulse) as u8,
-                    )
-                } else {
-                    egui::Color32::GRAY
-                };
-
                 if ui.checkbox(&mut self.auto_inject, "Auto-inject").changed() {
                     self.config.auto_inject = self.auto_inject;
                     if let Some(err) = self.config.save_with_error_message() {

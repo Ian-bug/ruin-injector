@@ -4,7 +4,8 @@
 *.pdb
 
 # Cargo
-Cargo.lock
+# (Cargo.lock should be committed for reproducible builds)
+# Cargo.lock
 
 # IDE
 .vscode/
