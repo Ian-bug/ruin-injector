@@ -7,6 +7,8 @@ Place your icon file (.ico format) in the project root directory:
 ```
 rust-injector/
 ├── icon.ico          ← Put it here!
+├── extension_icon512.png  ← Source PNG icon
+├── extension_icon1024.png ← Source PNG icon (high-res)
 ├── src/
 ├── Cargo.toml
 ├── build.rs
@@ -40,6 +42,12 @@ Use online tools to convert PNG to ICO:
 If you have a PNG icon, you can convert it using ImageMagick:
 ```bash
 magick icon.png -define icon:auto-resize=256,128,96,64,48,32,16 icon.ico
+```
+
+**Current Project Example**:
+```bash
+# Convert the 1024px PNG icon to ICO format
+magick extension_icon1024.png -define icon:auto-resize=256,128,96,64,48,32,16 icon.ico
 ```
 
 ## 🚀 Usage Steps

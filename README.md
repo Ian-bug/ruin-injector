@@ -4,6 +4,8 @@
 
 # 🎯 Ruin DLL Injector
 
+<img src="extension_icon512.png" alt="Ruin Injector Icon" width="128">
+
 **A modern, lightweight DLL injector built with Rust and egui**
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01WG0DL)

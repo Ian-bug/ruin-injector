@@ -4,6 +4,8 @@
 
 # 🎯 Ruin DLL 注入器
 
+<img src="extension_icon512.png" alt="Ruin Injector 图标" width="128">
+
 **基于 Rust 和 egui 构建的现代化轻量级 DLL 注入器**
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01WG0DL)
