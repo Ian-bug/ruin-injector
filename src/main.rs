@@ -1351,11 +1351,19 @@ impl eframe::App for InjectorApp {
 }
 
 fn main() -> eframe::Result<()> {
+    let icon_data = load_icon();
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([WINDOW_WIDTH, WINDOW_HEIGHT])
+        .with_min_inner_size([MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT])
+        .with_title("Ruin DLL Injector");
+
+    if let Some(icon) = icon_data {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([WINDOW_WIDTH, WINDOW_HEIGHT])
-            .with_min_inner_size([MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT])
-            .with_title("Ruin DLL Injector"),
+        viewport,
         ..Default::default()
     };
 
@@ -1364,6 +1372,20 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|_cc| Box::<InjectorApp>::default()),
     )
+}
+
+fn load_icon() -> Option<egui::IconData> {
+    let icon_bytes = include_bytes!("../icon.ico");
+    let image = image::load_from_memory(icon_bytes).ok()?;
+    let rgba_image = image.to_rgba8();
+
+    let (width, height) = rgba_image.dimensions();
+
+    Some(egui::IconData {
+        rgba: rgba_image.into_raw(),
+        width,
+        height,
+    })
 }
 
 #[cfg(test)]
