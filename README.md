@@ -8,7 +8,6 @@
 
 **A modern, lightweight DLL injector built with Rust and egui**
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y01WG0DL)
 
 ![Screenshot](screenshot.png)
 
